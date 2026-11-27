@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+maniamap-src.tar.gz
+screenshot*.png
+__pycache__/
+*.pyc
+release/

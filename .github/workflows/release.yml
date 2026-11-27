@@ -1,0 +1,58 @@
+name: Release
+
+# Publishes maniamap's release package on GitHub:
+# - when main changes and no release exists yet for the version in package.json (the workflow
+#   creates the v<version> tag itself), or
+# - when a v* tag matching package.json is pushed, or by hand (Actions > Release > Run workflow).
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json ($version)"; exit 1
+          fi
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "release v$version already exists: nothing to do"
+            echo "publish=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=yes" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.v.outputs.publish == 'yes'
+        with:
+          node-version: 20
+          cache: npm
+      - if: steps.v.outputs.publish == 'yes'
+        run: npm ci
+      - if: steps.v.outputs.publish == 'yes'
+        run: npm run typecheck
+      - if: steps.v.outputs.publish == 'yes'
+        run: npm test
+      - if: steps.v.outputs.publish == 'yes'
+        run: scripts/release.sh
+      - name: Publish the release
+        if: steps.v.outputs.publish == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          notes="$(awk '/^## /{n++} n==1' CHANGELOG.md | tail -n +2)"
+          gh release create "$TAG" release/maniamap-*-linux.tar.gz release/maniamap-*-linux.tar.gz.sha256 \
+            --target "$GITHUB_SHA" --title "maniamap ${TAG#v}" --notes "$notes"

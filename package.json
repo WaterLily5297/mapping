@@ -1,0 +1,42 @@
+{
+  "name": "maniamap",
+  "version": "1.0.0",
+  "description": "osu!mania mapping tool for any key count: editor, toolkit and auto-mapper",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build && npm run build:cli",
+    "build:cli": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/cli.mjs --banner:js=\"#!/usr/bin/env node\" && chmod +x dist/cli.mjs",
+    "preview": "vite preview",
+    "cli": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc",
+    "editor": "node dist/cli.mjs editor"
+  },
+  "license": "MIT",
+  "os": [
+    "linux"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.17.6",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2"
+  },
+  "type": "module",
+  "bin": {
+    "maniamap": "dist/cli.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ]
+}

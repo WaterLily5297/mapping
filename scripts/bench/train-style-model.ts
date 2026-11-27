@@ -1,0 +1,160 @@
+/**
+ * Train the auto-style model: per measure, audio features + target stars -> the pattern style the
+ * ranked map uses there. Writes src/automap/stylemodel.ts.
+ *
+ *   npx tsx scripts/bench/train-style-model.ts DATA_DIR [DATA_DIR...] [--holdout 3] [--cache f.json]
+ *
+ * Songs whose index (in sorted folder order, per data dir) is divisible by --holdout are left out
+ * for testing (the benchmark's --holdout uses the same rule).
+ */
+import { readdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { parseOsu, getKeys, isLN, type Beatmap } from '../../src/core/beatmap';
+import { redLines } from '../../src/core/timing';
+import { analyze, detectOnsets } from '../../src/automap/analysis';
+import { starRating } from '../../src/analysis/difficulty';
+import { classifyPatterns, type PatternType } from '../../src/analysis/patterns';
+import { STYLE_CLASSES, FEATURE_NAMES, songContext, measureFeatures, predictStyle, type StyleModel } from '../../src/automap/stylefeatures';
+
+const argv = process.argv.slice(2);
+const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
+const dirs = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i - 1].startsWith('--')));
+const holdout = Number(opt('holdout') ?? 3);
+const cacheFile = opt('cache');
+
+export function styleOfPattern(p: PatternType): number {
+  switch (p) {
+    case 'stream': case 'roll': case 'trill': case 'minitrill': return 1;
+    case 'jumpstream': case 'handstream': case 'quadstream': case 'doublestream': case 'lightchordstream': case 'densechordstream': return 2;
+    case 'jack': case 'longjack': case 'chordjack': return 3;
+    case 'brackets': case 'chordroll': case 'jumptrill': case 'splittrill': return 4;
+    case 'inverse': case 'lncoordination': case 'lnrelease': case 'lndensity': case 'ln': return 5;
+    default: return 0;
+  }
+}
+
+function decode(path: string): Float32Array {
+  const r = spawnSync('ffmpeg', ['-v', 'error', '-i', path, '-ac', '1', '-ar', '22050', '-f', 'f32le', '-'], { maxBuffer: 1 << 30 });
+  const b = r.stdout as Buffer;
+  return new Float32Array(b.buffer, b.byteOffset, Math.floor(b.byteLength / 4)).slice();
+}
+
+interface Sample { x: number[]; y: number; song: string; test: boolean }
+
+let samples: Sample[] = [];
+if (cacheFile && existsSync(cacheFile)) samples = JSON.parse(readFileSync(cacheFile, 'utf8'));
+else {
+  for (const dir of dirs) {
+    const sets = readdirSync(dir).sort();
+    sets.forEach((set, idx) => {
+      const p = join(dir, set);
+      let files: string[];
+      try { files = readdirSync(p); } catch { return; }
+      const audio = files.find((f) => /^audio\./.test(f));
+      if (!audio) return;
+      const maps: Beatmap[] = [];
+      for (const f of files.filter((x) => x.endsWith('.osu'))) {
+        try {
+          const m = parseOsu(readFileSync(join(p, f), 'utf8'));
+          if (redLines(m).length === 1 && getKeys(m) >= 4 && getKeys(m) <= 10 && m.notes.length > 100) maps.push(m);
+        } catch { /* skip */ }
+      }
+      if (!maps.length) return;
+      const a = analyze(decode(join(p, audio)), 22050);
+      const ctx = songContext(a, detectOnsets(a, 0.5));
+      for (const m of maps) {
+        const red = redLines(m)[0];
+        const beat = red.beatLength, bpm = 60000 / beat;
+        const stars = starRating(m).stars;
+        const pr = classifyPatterns(m);
+        const lnShare = m.notes.filter(isLN).length / m.notes.length;
+        if (lnShare > 0.2) continue; // LN maps are a choice of the mapper, not of the music
+        // per measure: majority style of its rows
+        const byMeasure = new Map<number, number[]>();
+        pr.rows.forEach((r, i) => {
+          const k = Math.floor((r.time - red.time) / (beat * 4) + 1e-6);
+          const arr = byMeasure.get(k) ?? new Array(STYLE_CLASSES.length).fill(0);
+          arr[lnShare > 0.35 ? 5 : styleOfPattern(pr.labels[i])]++;
+          byMeasure.set(k, arr);
+        });
+        for (const [k, counts] of byMeasure) {
+          const total = counts.reduce((x, y) => x + y, 0);
+          if (total < 4) continue;
+          const y = counts.indexOf(Math.max(...counts));
+          const t0 = red.time + k * beat * 4;
+          samples.push({ x: measureFeatures(ctx, t0, t0 + beat * 4, 4, bpm, stars, getKeys(m)), y, song: set, test: idx % holdout === 0 });
+        }
+      }
+      console.log(`${samples.length} samples  ${set.slice(0, 50)}`);
+    });
+  }
+  if (cacheFile) writeFileSync(cacheFile, JSON.stringify(samples));
+}
+
+// rice styles only: balanced (slow), stream, jumpstream, chordjack; tech is too rare in ranked maps
+const CLASSES = ['balanced', 'stream', 'jumpstream', 'chordjack'] as const;
+samples = samples.filter((s) => s.y <= 3);
+const train = samples.filter((s) => !s.test), test = samples.filter((s) => s.test);
+const F = FEATURE_NAMES.length, C = CLASSES.length;
+const mean = new Array(F).fill(0), std = new Array(F).fill(0);
+for (const s of train) s.x.forEach((v, i) => { mean[i] += v / train.length; });
+for (const s of train) s.x.forEach((v, i) => { std[i] += (v - mean[i]) ** 2 / train.length; });
+for (let i = 0; i < F; i++) std[i] = Math.sqrt(std[i]);
+mean[F - 1] = 0; std[F - 1] = 0; // bias stays 1
+
+// class weights against imbalance
+const counts = new Array(C).fill(0);
+for (const s of train) counts[s.y]++;
+const cw = counts.map((c) => (c ? Math.sqrt(train.length / (C * c)) : 0));
+
+const W = Array.from({ length: C }, () => new Array(F).fill(0));
+const z = (x: number[]) => x.map((v, i) => (std[i] > 0 ? (v - mean[i]) / std[i] : v));
+const Z = train.map((s) => z(s.x));
+const lr = 0.3, l2 = 1e-3;
+for (let epoch = 0; epoch < 400; epoch++) {
+  const G = Array.from({ length: C }, () => new Array(F).fill(0));
+  Z.forEach((x, n) => {
+    const logits = W.map((w) => w.reduce((s, wi, i) => s + wi * x[i], 0));
+    const m = Math.max(...logits);
+    const e = logits.map((l) => Math.exp(l - m));
+    const sum = e.reduce((a, b) => a + b, 0);
+    for (let c = 0; c < C; c++) {
+      const g = (e[c] / sum - (train[n].y === c ? 1 : 0)) * cw[train[n].y];
+      for (let i = 0; i < F; i++) G[c][i] += g * x[i];
+    }
+  });
+  for (let c = 0; c < C; c++) for (let i = 0; i < F; i++) W[c][i] -= lr * (G[c][i] / Z.length + l2 * W[c][i]);
+}
+const model: StyleModel = { classes: [...CLASSES], weights: W.map((w) => w.map((v) => +v.toFixed(4))), mean: mean.map((v) => +v.toFixed(4)), std: std.map((v) => +v.toFixed(4)) };
+
+const evalSet = (set: Sample[]) => {
+  let ok = 0;
+  const conf = Array.from({ length: C }, () => new Array(C).fill(0));
+  for (const s of set) {
+    const p = predictStyle(model, s.x);
+    const k = p.indexOf(Math.max(...p));
+    conf[s.y][k]++;
+    if (k === s.y) ok++;
+  }
+  return { acc: ok / Math.max(1, set.length), conf };
+};
+const base = Math.max(...counts) / train.length;
+const tr = evalSet(train), te = evalSet(test);
+console.log(`\ntrain ${train.length} samples, test ${test.length} (held-out songs)`);
+console.log(`class counts ${CLASSES.map((c, i) => `${c}:${counts[i]}`).join(' ')}`);
+console.log(`accuracy train ${tr.acc.toFixed(3)}  test ${te.acc.toFixed(3)}  (majority-class baseline ${base.toFixed(3)})`);
+console.log('test confusion (rows = ranked map, cols = predicted):');
+console.log('            ' + CLASSES.map((c) => c.slice(0, 7).padStart(8)).join(''));
+te.conf.forEach((r, i) => console.log(CLASSES[i].padEnd(12) + r.map((v) => String(v).padStart(8)).join('')));
+
+writeFileSync(new URL('../../src/automap/stylemodel.ts', import.meta.url), `/**
+ * Learned auto-style model (multinomial logistic regression), trained by
+ * scripts/bench/train-style-model.ts on ${train.length} measures of ranked osu!mania maps.
+ * Held-out accuracy ${te.acc.toFixed(3)} (majority baseline ${base.toFixed(3)}).
+ */
+import type { StyleModel } from './stylefeatures';
+
+export const STYLE_MODEL: StyleModel = ${JSON.stringify(model)};
+`);
+console.log('wrote src/automap/stylemodel.ts');

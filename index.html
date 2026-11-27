@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>maniamap</title>
+  <meta name="theme-color" content="#0b0d12" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff5fa8'/%3E%3Cstop offset='1' stop-color='%238a6cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Crect x='6' y='8' width='5' height='3' rx='1.5' fill='white'/%3E%3Crect x='13.5' y='14' width='5' height='3' rx='1.5' fill='white'/%3E%3Crect x='21' y='10' width='5' height='3' rx='1.5' fill='white'/%3E%3Crect x='6' y='21' width='20' height='2' rx='1' fill='white' opacity='.8'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/src/ui/style.css" />
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.5" y="5" width="4" height="14" rx="1.2" fill="currentColor"/><rect x="13.5" y="5" width="4" height="14" rx="1.2" fill="currentColor"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="6.5" cy="18" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="17.5" cy="16" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" fill="currentColor"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" fill="currentColor" opacity=".7"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-dice" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="9" r="1.4" fill="currentColor"/><circle cx="15" cy="15" r="1.4" fill="currentColor"/><circle cx="15" cy="9" r="1.4" fill="currentColor"/><circle cx="9" cy="15" r="1.4" fill="currentColor"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 4 3 9l9 5 9-5-9-5zM3 14l9 5 9-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17l9-10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 8v5m0 3.5v.01M10.3 4.2 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  </svg>
+
+  <header id="appbar">
+    <div class="logo"><span class="mark"></span><span>maniamap</span></div>
+    <nav class="viewtabs" role="tablist">
+      <button data-view="studio" class="on" role="tab"><svg><use href="#i-spark"/></svg>Generate</button>
+      <button data-view="editor" role="tab"><svg><use href="#i-edit"/></svg>Editor</button>
+    </nav>
+    <div class="grow"></div>
+    <span class="appbar-note" id="app-version">osu!mania · 1K–18K · runs on your computer</span>
+    <button class="ghost" id="app-quit" hidden title="Stop maniamap (the local server) and close">Quit</button>
+  </header>
+
+  <div id="view-studio" class="view">
+    <div class="studio">
+      <div class="st-left">
+        <section class="card" id="st-song-card">
+          <label class="drop" id="st-drop">
+            <input id="st-file" type="file" accept="audio/*,.mp3,.ogg,.wav,.opus,.flac,.osz" hidden />
+            <span class="drop-icon"><svg><use href="#i-upload"/></svg></span>
+            <span class="drop-title">Drop a song</span>
+            <span class="drop-sub">MP3, OGG, WAV, or an .osz — or click to choose</span>
+          </label>
+          <div class="song" id="st-song" hidden>
+            <div class="song-head">
+              <button class="round play" id="st-play" title="Play / pause (Space)"><svg><use href="#i-play"/></svg></button>
+              <div class="song-meta">
+                <input id="st-title" class="title-input" spellcheck="false" placeholder="Title" />
+                <input id="st-artist" class="artist-input" spellcheck="false" placeholder="Artist" />
+              </div>
+              <label class="ghost small" title="Choose another song">Change<input id="st-file2" type="file" accept="audio/*,.mp3,.ogg,.wav,.opus,.flac,.osz" hidden /></label>
+            </div>
+            <canvas id="st-wave" title="Click to seek"></canvas>
+            <div class="tempo">
+              <span class="pill" id="st-dur">0:00</span>
+              <label class="pill input">BPM <input id="st-bpm" type="number" step="0.01" /></label>
+              <button class="pill btn" id="st-bpm-x2" title="Double the tempo">×2</button>
+              <button class="pill btn" id="st-bpm-half" title="Halve the tempo">÷2</button>
+              <label class="pill input">Offset <input id="st-offset" type="number" step="1" /> ms</label>
+              <span class="pill" id="st-timing-note" hidden></span>
+              <span class="analysing" id="st-analysing" hidden><span class="spinner"></span>analysing</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card settings">
+          <div class="field">
+            <div class="field-head"><span>Engine</span><span class="hint" id="st-engine-state"></span></div>
+            <div class="seg engine wide" id="st-engine">
+              <button data-engine="ai">AI · Mapperatorinator V32</button>
+              <button data-engine="mug" hidden title="MuG Diffusion: diffusion model for osu!mania 4K (non-commercial weights)">AI · MuG Diffusion (4K)</button>
+              <button data-engine="builtin" class="on">Quick rules</button>
+            </div>
+            <div class="hint" id="st-engine-hint">Checking for the AI model…</div>
+            <div class="setup-card" id="st-setup" hidden>
+              <div class="setup-head"><strong>Get real-quality maps: set up the AI mapper</strong><span class="hint" id="st-setup-size">about 2 GB, 10–30 minutes, once</span></div>
+              <p class="hint">Mapperatorinator is an osu!mania model trained on ranked maps. It installs into your home folder and runs on this computer; nothing is uploaded.</p>
+              <ul class="setup-blockers" id="st-setup-blockers"></ul>
+              <div class="setup-actions">
+                <button class="primary" id="st-setup-go">Set up the AI</button>
+                <label class="hint"><input type="checkbox" id="st-setup-cpu" /> CPU only (smaller download)</label>
+                <button class="ghost" id="st-setup-cancel" hidden>Cancel</button>
+              </div>
+              <div class="setup-progress" id="st-setup-progress" hidden>
+                <div class="setup-status"><span class="spinner" id="st-setup-spin"></span><span id="st-setup-state">Starting…</span></div>
+                <pre id="st-setup-log"></pre>
+              </div>
+            </div>
+            <label class="slider-row ai-only" hidden>Model
+              <select id="st-model"><option value="v32">V32 · best quality</option><option value="v32-mini">V32-mini · 4× smaller, faster on a CPU</option></select>
+            </label>
+            <label class="slider-row ai-only" hidden>Style reference
+              <select id="st-mapper"><option value="auto">Auto: best ranked mapper for these keys/stars</option><option value="">None</option></select>
+            </label>
+          </div>
+          <div class="field">
+            <div class="field-head"><span>Keys</span><span class="hint" id="st-keys-hint">4K</span></div>
+            <div class="keychips" id="st-keys"></div>
+          </div>
+          <div class="field">
+            <div class="field-head"><span>Difficulty</span><span class="star-badge big" id="st-star-badge">★ 3.50</span></div>
+            <input id="st-stars" class="star-slider" type="range" min="0.5" max="12.5" step="0.05" value="3.5" />
+            <div class="tiers" id="st-tiers"></div>
+            <div class="hint" id="st-stars-hint">Star Rating Rebirth · ≈ 3.2★ in osu!</div>
+          </div>
+          <div class="field">
+            <div class="field-head"><span>Style</span></div>
+            <div class="styles" id="st-styles"></div>
+          </div>
+          <details class="advanced" id="st-advanced">
+            <summary>Advanced</summary>
+            <div class="adv-grid">
+              <label class="slider-row">Long notes <input id="st-ln" type="range" min="0" max="1" step="0.05" value="0.25" /><output>0.25</output></label>
+              <label class="slider-row">Sound direction <select id="st-direction" title="Where notes lean: the stereo position of the sound (left speaker, left hand) or its pitch (low on the left). Quick rules engine only.">
+                <option value="auto">Auto: stereo if the mix is panned</option>
+                <option value="stereo">Stereo position</option>
+                <option value="pitch">Pitch</option>
+              </select></label>
+              <p class="hint" id="st-direction-hint"></p>
+              <label class="slider-row">Direction strength <input id="st-pitch" type="range" min="0" max="1" step="0.05" value="0.5" /><output>0.50</output></label>
+              <label class="slider-row">Seed <input id="st-seed" type="number" value="7" /></label>
+              <label class="slider-row">Mapper name <input id="st-creator" type="text" placeholder="maniamap" /></label>
+            </div>
+          </details>
+        </section>
+
+        <button class="cta" id="st-generate" disabled><svg><use href="#i-spark"/></svg><span>Generate</span></button>
+        <div class="cta-hint" id="st-cta-hint">Drop a song to start</div>
+      </div>
+
+      <div class="st-right">
+        <section class="empty" id="st-empty">
+          <canvas id="st-hero"></canvas>
+          <div class="empty-copy">
+            <h1>From song to chart in seconds</h1>
+            <p>Choose the keys, set the stars <em>before</em> generating, pick a style. maniamap detects the tempo, maps the rhythm in real patterns and hits your star target. Then fine-tune it in the editor.</p>
+            <ol class="steps">
+              <li><span>1</span>Drop a song</li>
+              <li><span>2</span>Keys · stars · style</li>
+              <li><span>3</span>Generate, preview, export</li>
+            </ol>
+          </div>
+        </section>
+
+        <section class="result" id="st-result" hidden>
+          <div class="result-head">
+            <div class="star-badge huge" id="r-star">★ 0.00</div>
+            <div class="result-title">
+              <div class="r-version" id="r-version"></div>
+              <div class="r-engine" id="r-engine"></div>
+              <div class="r-sub" id="r-sub"></div>
+            </div>
+            <div class="grow"></div>
+            <div class="r-actions">
+              <button class="secondary" id="r-again" title="Same settings, new seed"><svg><use href="#i-dice"/></svg>Variation</button>
+              <button class="secondary" id="r-editor"><svg><use href="#i-edit"/></svg>Open in editor</button>
+              <button class="primary" id="r-download"><svg><use href="#i-download"/></svg>Download .osz</button>
+            </div>
+          </div>
+          <div class="result-grid">
+            <div class="card preview">
+              <canvas id="r-preview"></canvas>
+              <div class="preview-bar">
+                <button class="round small" id="r-play" title="Play / pause (Space)"><svg><use href="#i-play"/></svg></button>
+                <span class="time" id="r-time">0:00</span>
+                <input id="r-speed" type="range" min="0.4" max="2" step="0.05" value="1" title="Scroll speed" />
+              </div>
+            </div>
+            <div class="insights">
+              <div class="stats-row" id="r-stats"></div>
+              <div class="card">
+                <div class="card-title">Difficulty over time</div>
+                <canvas id="r-graph" title="Click to seek"></canvas>
+                <div class="timeline" id="r-timeline" title="Patterns over time"></div>
+              </div>
+              <div class="card">
+                <div class="card-title">Pattern mix <span class="hint" id="r-category"></span></div>
+                <div class="mix" id="r-mix"></div>
+              </div>
+              <div class="card">
+                <div class="card-title">Clean check</div>
+                <div class="checks" id="r-clean"></div>
+              </div>
+            </div>
+          </div>
+          <div class="card mapset">
+            <div class="card-title"><svg><use href="#i-layers"/></svg>Mapset <span class="hint">several difficulties in one .osz</span>
+              <div class="grow"></div>
+              <button class="secondary small" id="ms-add"><svg><use href="#i-plus"/></svg>Add this</button>
+              <button class="secondary small" id="ms-spread" title="Generate a full spread of difficulties up to this one"><svg><use href="#i-spark"/></svg>Full spread</button>
+              <button class="primary small" id="ms-download" disabled><svg><use href="#i-download"/></svg>Download mapset</button>
+            </div>
+            <div class="ms-list" id="ms-list"><div class="hint">Add difficulties here to export them together.</div></div>
+          </div>
+        </section>
+        <div class="busy" id="st-busy" hidden><div class="busy-card"><span class="spinner big"></span><div id="st-busy-text">Generating…</div><div class="busy-sub" id="st-busy-sub"></div></div></div>
+      </div>
+    </div>
+    <div class="toast" id="st-toast" hidden></div>
+  </div>
+
+  <div id="view-editor" class="view" hidden>
+  <header id="topbar">
+    <span class="brand">maniamap</span>
+    <div class="group">
+      <label class="btn">Open .osz/.osu<input id="open-map" type="file" accept=".osz,.osu" hidden /></label>
+      <label class="btn">Open audio<input id="open-audio" type="file" accept="audio/*,.mp3,.ogg,.wav" hidden /></label>
+      <button id="save-osu" title="Ctrl+S">Save .osu</button>
+      <button id="export-osz">Export .osz</button>
+      <select id="diff-select" title="Difficulty from the opened .osz" hidden></select>
+    </div>
+    <div class="group">
+      <button id="play" title="Space">▶</button>
+      <select id="rate" title="Playback rate">
+        <option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="0.75">0.75×</option>
+        <option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option>
+      </select>
+      <input id="volume" type="range" min="0" max="1" step="0.05" value="0.6" title="Volume" />
+    </div>
+    <div class="group">
+      <span class="lbl">Snap</span>
+      <select id="divisor" title="[ and ] change it">
+        <option value="1">1/1</option><option value="2">1/2</option><option value="3">1/3</option>
+        <option value="4" selected>1/4</option><option value="6">1/6</option><option value="8">1/8</option>
+        <option value="12">1/12</option><option value="16">1/16</option>
+      </select>
+      <div class="seg" id="modes">
+        <button data-mode="select" title="1">Select</button>
+        <button data-mode="note" title="2">Note</button>
+        <button data-mode="hold" title="3">Hold</button>
+      </div>
+      <button id="live" title="Tab: place notes with the keyboard while the song plays">Live</button>
+    </div>
+    <div class="group">
+      <button id="undo" title="Ctrl+Z">↶</button>
+      <button id="redo" title="Ctrl+Y">↷</button>
+      <label class="chk"><input id="snapcolor" type="checkbox" /> snap colours</label>
+      <label class="chk"><input id="wave" type="checkbox" checked /> waveform</label>
+      <label class="chk"><input id="ticks" type="checkbox" checked /> hit ticks</label>
+    </div>
+  </header>
+
+  <main>
+    <aside id="sidebar">
+      <nav id="tabs">
+        <button data-tab="song" class="active">Song</button>
+        <button data-tab="timing">Timing</button>
+        <button data-tab="tools">Tools</button>
+        <button data-tab="auto">Auto-map</button>
+        <button data-tab="patterns">Patterns</button>
+        <button data-tab="check">Check</button>
+        <button data-tab="help">Keys</button>
+      </nav>
+
+      <section data-panel="song">
+        <h3>New map</h3>
+        <div class="row">
+          <label>Keys <input id="new-keys" type="number" min="1" max="18" value="4" /></label>
+          <button id="new-map">Create empty map</button>
+        </div>
+        <h3>Metadata</h3>
+        <div class="form" id="meta-form"></div>
+        <h3>Difficulty</h3>
+        <div class="form" id="diff-form"></div>
+        <div class="row"><button id="set-preview">Set preview point = now</button></div>
+      </section>
+
+      <section data-panel="timing" hidden>
+        <h3>Add timing</h3>
+        <div class="row">
+          <label>BPM <input id="tp-bpm" type="number" step="0.01" value="180" /></label>
+          <label>Meter <input id="tp-meter" type="number" min="1" max="16" value="4" /></label>
+          <button id="add-red">+ Red line at now</button>
+        </div>
+        <div class="row">
+          <label>SV <input id="tp-sv" type="number" step="0.05" value="1" /></label>
+          <button id="add-green">+ SV line at now</button>
+        </div>
+        <div class="row">
+          <button id="tap">Tap (T)</button><span id="tap-out" class="muted">tap along to the beat</span>
+        </div>
+        <div class="row">
+          <button id="detect-bpm">Detect BPM + offset from audio</button>
+        </div>
+        <div class="row">
+          <button id="bpm-x2" title="Double the BPM of every red line (notes do not move)">BPM ×2</button>
+          <button id="bpm-half" title="Halve the BPM of every red line (notes do not move)">BPM ÷2</button>
+          <span class="muted small">for half-time / double-time songs</span>
+        </div>
+        <p class="muted small">Detection assumes one constant BPM. For songs with tempo changes, add red lines by hand.</p>
+        <h3>Timing points</h3>
+        <div id="tp-list" class="list"></div>
+      </section>
+
+      <section data-panel="tools" hidden>
+        <p class="muted small">When notes are selected, the tools below only change the selection (except key conversion and rate).</p>
+        <h3>Key conversion (1K–18K)</h3>
+        <div class="row">
+          <label>To <input id="conv-keys" type="number" min="1" max="18" value="7" /> K</label>
+          <label>Seed <input id="conv-seed" type="number" value="1" /></label>
+          <button id="conv">Convert</button>
+        </div>
+        <div class="row wrap">
+          <label>Add chords <input id="conv-fill" type="range" min="0" max="0.6" step="0.05" value="0" /><span class="val"></span></label>
+          <label class="chk"><input id="conv-spread" type="checkbox" /> spread jacks</label>
+        </div>
+        <p class="muted small">Keeps the original pattern shapes, never adds fast jacks, balances hands. "Add chords" makes the map denser when adding keys; "spread jacks" moves the source's jacks onto other columns.</p>
+        <h3>Patterns</h3>
+        <div class="row wrap">
+          <button data-tool="mirror">Mirror</button>
+          <button data-tool="permute">Shuffle columns</button>
+          <button data-tool="randomize">Randomize</button>
+          <button data-tool="fix">Remove overlaps</button>
+        </div>
+        <h3>LN converter</h3>
+        <div class="row wrap">
+          <label>Preset <select id="lnc-preset"><option>light</option><option selected>hybrid</option><option>full</option><option>inverse</option></select></label>
+          <button id="lnc-run">Convert to LN</button>
+        </div>
+        <div class="row wrap">
+          <label>Short gaps <input id="lnc-short" type="range" min="0" max="1" step="0.05" value="0.25" /><span class="val"></span></label>
+          <label>Long gaps <input id="lnc-long" type="range" min="0" max="1" step="0.05" value="0.7" /><span class="val"></span></label>
+          <label>Length <input id="lnc-level" type="range" min="0.2" max="1" step="0.05" value="0.7" /><span class="val"></span></label>
+        </div>
+        <p class="muted small">Share of notes with short / long gaps to the next note in their column that become LNs, and how much of the gap they fill. Releases snap to the grid, keep a safe gap before the next note and never hold through fast same-hand runs (except inverse).</p>
+        <h3>Long notes (simple)</h3>
+        <div class="row">
+          <label>Gap (beats) <input id="ln-gap" type="number" step="0.0625" value="0.25" /></label>
+          <label>Max (beats, 0=∞) <input id="ln-max" type="number" step="0.5" value="0" /></label>
+        </div>
+        <div class="row wrap">
+          <button data-tool="fullln">Full LN</button>
+          <button data-tool="inverse">Inverse</button>
+          <button data-tool="noln">LN → rice</button>
+        </div>
+        <h3>Difficulty</h3>
+        <div class="row">
+          <span id="sr-now" class="muted"></span>
+        </div>
+        <div class="row">
+          <label>Target ★ <input id="sr-target" type="number" min="0.5" max="12" step="0.1" value="3" /></label>
+          <button id="sr-adjust">Adjust difficulty</button>
+        </div>
+        <label class="chk"><input id="sr-jacks" type="checkbox" /> to go harder, also allow 1/2-beat chord jacks</label>
+        <p class="muted small">Removes the least important notes (fine snaps, chord extras, jacks, peak sections first, hands kept balanced) or adds clean notes on the beat grid, never fast jacks.</p>
+        <h3>Timing</h3>
+        <div class="row">
+          <label>Quantize to 1/<input id="q-div" type="number" min="1" max="16" value="4" /></label>
+          <button data-tool="quantize">Quantize</button>
+        </div>
+        <div class="row">
+          <label>Rate <input id="rate-x" type="number" step="0.05" value="1.2" />×</label>
+          <button id="rate-apply">Change rate (chart only)</button>
+        </div>
+        <p class="muted small">A rate change only changes the chart timing. Use the CLI (<code>maniamap rate</code>) to re-encode the audio with ffmpeg.</p>
+      </section>
+
+      <section data-panel="auto" hidden>
+        <div class="seg engine" id="am-engine">
+          <button data-engine="builtin" class="on">Built-in (instant)</button>
+          <button data-engine="ai">AI: Mapperatorinator</button>
+        </div>
+        <p class="muted small" id="am-engine-help">Creates notes from the loaded audio using onset detection, beat-grid snapping, pitch-to-column mapping and pattern rules. Works for any key count.</p>
+        <div class="form">
+          <label>Keys <input id="am-keys" type="number" min="1" max="18" value="4" /></label>
+        </div>
+        <div class="form" id="am-ai" hidden>
+          <div id="ai-avail" class="muted small"></div>
+          <label>Target ★ <input id="ai-stars" type="number" min="0.5" max="12" step="0.1" value="3.5" /></label>
+          <label class="chk"><input id="ai-fit" type="checkbox" checked /> adjust the result to the target ★ (cleanly removes / adds notes)</label>
+          <label>LN share <input id="ai-ln" type="range" min="0" max="1" step="0.05" value="0.1" /><span class="val"></span></label>
+          <label>Year style <input id="ai-year" type="number" min="2007" max="2024" value="2023" /></label>
+          <label>Style strength <input id="ai-cfg" type="range" min="1" max="3" step="0.1" value="1.5" /><span class="val"></span></label>
+          <label>Style (LoRA) <select id="ai-lora"><option value="">base model</option></select></label>
+          <label>Seed <input id="ai-seed" type="number" placeholder="random" /></label>
+          <label>Device <select id="ai-device"><option value="auto">auto (GPU if available)</option><option value="cpu">CPU</option><option value="cuda">NVIDIA (cuda)</option></select></label>
+          <label class="chk"><input id="ai-timing" type="checkbox" checked /> use the map's timing (much faster; set it on the Timing tab)</label>
+          <div><div class="muted small">Style tags (osu! user tags)</div><div id="ai-tags" class="chips pick"></div></div>
+          <div id="ai-progress" class="stats" hidden></div>
+          <div id="ai-check" class="tags"></div>
+        </div>
+        <div class="form" id="am-builtin">
+          <label>Target ★ <input id="am-stars" type="number" min="0.5" max="12" step="0.1" placeholder="off" title="Set the difficulty first: the generator searches its settings until the chart has this star rating" /></label>
+          <p class="muted small" id="am-stars-help">Set a target star rating (Star Rating Rebirth) and the generator searches density, chords and streams until it lands there. Leave empty to use the sliders.</p>
+          <label>Style
+            <select id="am-style">
+              <option value="auto" selected>Auto (learned)</option><option value="balanced">Balanced</option><option value="stream">Stream</option><option value="jumpstream">Jumpstream</option>
+              <option value="chordjack">Chordjack</option><option value="tech">Technical</option><option value="ln">Long notes</option>
+            </select>
+          </label>
+          <label>Difficulty
+            <select id="am-diff">
+              <option>easy</option><option>normal</option><option selected>hard</option><option>insane</option><option>expert</option>
+            </select>
+          </label>
+          <label>Snap 1/<select id="am-div"><option value="">auto</option><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option><option>8</option></select></label>
+          <label>Density <input id="am-density" type="range" min="0.05" max="1" step="0.05" value="0.7" /><span class="val"></span></label>
+          <label>LN amount <input id="am-ln" type="range" min="0" max="1" step="0.05" value="0.25" /><span class="val"></span></label>
+          <label>Max chord <input id="am-chord" type="number" min="1" max="18" value="" placeholder="auto" /></label>
+          <label>Pitch → column <input id="am-pitch" type="range" min="0" max="1" step="0.05" value="0.5" /><span class="val"></span></label>
+          <label>Seed <input id="am-seed" type="number" value="12345" /></label>
+          <label class="chk"><input id="am-timing" type="checkbox" checked /> use the map's timing if it has a red line</label>
+        </div>
+        <h3>Range (optional)</h3>
+        <div class="row wrap">
+          <button id="range-a">Start = now</button>
+          <button id="range-b">End = now</button>
+          <button id="range-clear">Clear</button>
+          <span id="range-out" class="muted">whole song</span>
+        </div>
+        <div class="row"><button id="am-run" class="primary">Generate</button><button id="ai-cancel" hidden>Cancel</button><span id="am-status" class="muted"></span></div>
+        <p class="muted small">When a range is set, only the notes inside it are replaced. Use this to auto-fill a section and then edit it by hand.</p>
+      </section>
+
+      <section data-panel="patterns" hidden>
+        <div class="row wrap">
+          <label class="chk"><input id="pat-lane" type="checkbox" checked /> show pattern lane</label>
+          <label class="chk"><input id="pat-auto" type="checkbox" checked /> update while editing</label>
+          <button id="pat-run">Analyse</button>
+        </div>
+        <div id="pat-summary" class="muted"></div>
+        <div id="pat-category" class="category"></div>
+        <h3>Suggested osu! user tags</h3>
+        <div id="pat-tags" class="tags"></div>
+        <p class="muted small">Tag rules adapted from Columnist (validated on osu! user-tag votes) plus this classifier's section analysis. Treat them as suggestions.</p>
+        <h3>Share of mapped time</h3>
+        <div id="pat-bars" class="bars"></div>
+        <h3>Skillsets</h3>
+        <div id="pat-groups" class="chips"></div>
+        <h3>Select by pattern</h3>
+        <div class="row">
+          <select id="pat-type"></select>
+          <button id="pat-select">Select notes</button>
+        </div>
+        <p class="muted small">Selected notes can then be changed with the Tools tab, e.g. mirror only the jumptrills.</p>
+        <h3>Sections</h3>
+        <div class="row">
+          <label>Min rows <input id="pat-min" type="number" min="1" value="8" /></label>
+          <select id="pat-filter"><option value="">all types</option></select>
+        </div>
+        <div id="pat-list" class="list"></div>
+      </section>
+
+      <section data-panel="check" hidden>
+        <div class="row"><button id="check-run">Refresh</button></div>
+        <pre id="stats" class="stats"></pre>
+        <h3>Problems</h3>
+        <div id="issues" class="list"></div>
+      </section>
+
+      <section data-panel="help" hidden>
+        <table class="keys">
+          <tr><td>Space</td><td>play / pause</td></tr>
+          <tr><td>Wheel / ↑ ↓</td><td>move by one snap (Shift = ×4)</td></tr>
+          <tr><td>Ctrl + wheel, + / −</td><td>zoom</td></tr>
+          <tr><td>[ / ]</td><td>snap divisor</td></tr>
+          <tr><td>1 / 2 / 3</td><td>select / note / hold mode</td></tr>
+          <tr><td>Left click</td><td>place note (hold mode: drag to set the LN length)</td></tr>
+          <tr><td>Right click</td><td>delete note (or the whole selection)</td></tr>
+          <tr><td>Drag note</td><td>move the selection in time and column</td></tr>
+          <tr><td>Drag empty (select mode)</td><td>box select (Shift adds)</td></tr>
+          <tr><td>Ctrl+A / C / X / V</td><td>select all / copy / cut / paste at now</td></tr>
+          <tr><td>Ctrl+H</td><td>mirror the selection</td></tr>
+          <tr><td>Delete</td><td>delete the selection</td></tr>
+          <tr><td>Ctrl+Z / Ctrl+Y</td><td>undo / redo</td></tr>
+          <tr><td>Tab</td><td>live mapping: press the column keys while the song plays (hold for LN)</td></tr>
+          <tr><td>T</td><td>tap BPM (on the Timing tab)</td></tr>
+          <tr><td>Ctrl+S</td><td>save .osu</td></tr>
+        </table>
+        <h3>Live-mapping keys</h3>
+        <div class="row"><input id="layout" type="text" spellcheck="false" /><button id="layout-reset">Default</button></div>
+        <p class="muted small">One character per column, left to right.</p>
+      </section>
+    </aside>
+
+    <div id="stage">
+      <canvas id="field" tabindex="0"></canvas>
+    </div>
+    <canvas id="overview" title="Click to seek"></canvas>
+  </main>
+  <footer id="status">Ready. Open a .osz / .osu and an audio file, or create a new map.</footer>
+  </div>
+  <script type="module" src="/src/ui/boot.ts"></script>
+</body>
+</html>
