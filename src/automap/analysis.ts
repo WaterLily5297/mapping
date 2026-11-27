@@ -223,8 +223,11 @@ export interface Onset {
   frame: number;
 }
 
-/** sub-frame onset times (parabolic interpolation of the flux peak) */
-export let ONSET_INTERP = false;
+/**
+ * Sub-frame onset times (parabolic interpolation of the flux peak). On 40 held-out ranked songs
+ * (audio-bench --heldout-id): onset timing error 3.74 -> 2.84 ms, onset F1 0.781 -> 0.784.
+ */
+export let ONSET_INTERP = true;
 export function _setOnsetInterp(on: boolean) { ONSET_INTERP = on; }
 
 /** Peak-pick the onset envelope with an adaptive (moving average) threshold. */
