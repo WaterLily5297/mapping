@@ -22,7 +22,7 @@ import { starRating } from '../../src/analysis/difficulty';
 
 const argv = process.argv.slice(2);
 // --contrast-source energy|loudness
-{ const i = argv.indexOf('--contrast-source'); if (i >= 0) _setContrastSource(argv[i + 1] as 'energy' | 'loudness'); }
+{ const i = argv.indexOf('--contrast-source'); if (i >= 0) _setContrastSource(argv[i + 1] as 'auto' | 'energy' | 'loudness'); }
 const dataDir = argv[0];
 const opt = (k: string, d: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
 const contrast = opt('contrast', '') === '' ? undefined : Number(opt('contrast', '0'));

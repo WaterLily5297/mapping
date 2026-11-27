@@ -34,7 +34,7 @@ const argv = process.argv.slice(2);
 const dataDir = argv[0];
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 // --contrast-source energy|loudness
-if (opt('contrast-source')) _setContrastSource(opt('contrast-source') as 'energy' | 'loudness');
+if (opt('contrast-source')) _setContrastSource(opt('contrast-source') as 'auto' | 'energy' | 'loudness');
 const max = Number(opt('max') ?? 40);
 const keysFilter = (opt('keys') ?? '4,7').split(',').map(Number);
 const style = opt('style');

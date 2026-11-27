@@ -92,3 +92,12 @@ describe('contrast-aware star adjustment', () => {
     expect(share(aware.map)).toBeGreaterThan(0.55);
   });
 });
+
+describe('contrast source per key count', () => {
+  it('uses the music-energy curve from 6K and loudness below', async () => {
+    const { contrastSourceFor } = await import('../src/automap/generate');
+    expect(contrastSourceFor(4)).toBe('loudness');
+    expect(contrastSourceFor(6)).toBe('energy');
+    expect(contrastSourceFor(7)).toBe('energy');
+  });
+});

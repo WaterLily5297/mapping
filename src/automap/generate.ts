@@ -7,7 +7,7 @@
  * It is deliberately deterministic for a given seed so results are reproducible,
  * and every stage is a small function you can replace (e.g. with an ML model).
  */
-import { type Beatmap, type Note, type TimingPoint, createBeatmap, makeNote, sortNotes } from '../core/beatmap';
+import { type Beatmap, type Note, type TimingPoint, createBeatmap, makeNote, sortNotes, getKeys } from '../core/beatmap';
 import { snapTime, redLineAt } from '../core/timing';
 import { rng } from '../core/rng';
 import { type Style, type StyleDef, STYLES, placeColumns, type PlannedRow } from './patternize';
@@ -410,9 +410,19 @@ export function loudnessAt(a: Analysis, windowMs: number): (t: number) => number
   return (t) => env[Math.max(0, Math.min(env.length - 1, Math.round(t / 1000 / a.frameDur)))] ?? 0;
 }
 
-/** what contrast follows: the learned music-energy curve (energy.ts) or loudness alone */
-export let CONTRAST_SOURCE: 'energy' | 'loudness' = 'loudness';
-export function _setContrastSource(s: 'energy' | 'loudness') { CONTRAST_SOURCE = s; }
+/**
+ * What contrast follows: the learned music-energy curve (energy.ts) or loudness alone. 'auto' uses
+ * energy from 6K up. On held-out songs energy made the density shape closer to the ranked maps for
+ * 7K (r 0.511 -> 0.549; 6+ stars 0.606 -> 0.645, rhythm F1 0.760 -> 0.766) and 6K (0.479 -> 0.489),
+ * and the star adjustment closer to human easier difficulties (7K shape 0.225 -> 0.243, 6K 0.006 ->
+ * 0.068); 4K did not gain (0.499 -> 0.499) and keeps loudness.
+ */
+export let CONTRAST_SOURCE: 'auto' | 'energy' | 'loudness' = 'auto';
+export function _setContrastSource(s: 'auto' | 'energy' | 'loudness') { CONTRAST_SOURCE = s; }
+/** the contrast source used for a key count */
+export function contrastSourceFor(keys: number): 'energy' | 'loudness' {
+  return CONTRAST_SOURCE === 'auto' ? (keys >= 6 ? 'energy' : 'loudness') : CONTRAST_SOURCE;
+}
 
 /**
  * The learned energy curve as a per-frame z-score (measures of the map's first red line; linear
@@ -440,7 +450,7 @@ export function energyEnvelope(a: Analysis, map: Beatmap, onsets?: Onset[]): Flo
 /** contrast-aware star adjustment: the song's intensity at time t for this map (CONTRAST_SOURCE) */
 export function loudnessForMap(a: Analysis, map: Beatmap): (t: number) => number {
   const red = map.timingPoints.find((p) => p.uninherited && p.beatLength > 0);
-  if (CONTRAST_SOURCE === 'energy') {
+  if (contrastSourceFor(getKeys(map)) === 'energy') {
     const env = energyEnvelope(a, map);
     return (t) => env[Math.max(0, Math.min(env.length - 1, Math.round(t / 1000 / a.frameDur)))] ?? 0;
   }
@@ -455,7 +465,7 @@ export function learnedRhythm(a: Analysis, map: Beatmap, divisors: number | numb
   const first = onsets[0]?.time ?? 0, last = onsets[onsets.length - 1]?.time ?? end;
   const ticks = gridTicksFor(map, divs, Math.max(0, first - 100), Math.min(end, last + 100));
   const cur = { i: 0 };
-  const env = contrast ? (CONTRAST_SOURCE === 'energy' ? energyEnvelope(a, map, onsets) : loudnessEnvelope(a, windowMs)) : null;
+  const env = contrast ? (contrastSourceFor(getKeys(map)) === 'energy' ? energyEnvelope(a, map, onsets) : loudnessEnvelope(a, windowMs)) : null;
   const scored = ticks.map((tk) => {
     const x = tickFeatures(ctx, map, tk, stars, cur, finest);
     const f = Math.max(0, Math.min(a.flux.length - 1, tk.frame));
