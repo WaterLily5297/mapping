@@ -86,6 +86,7 @@ auto-mapper:
            chart has X stars (Star Rating Rebirth) [--tolerance 0.1]
            [--bpm 180 --offset 123] [--divisor 4] [--density 0..1] [--ln 0..1]
            [--max-chord N] [--pitch 0..1] [--seed S]
+           [--candidates 3]  quick rules: make N charts, keep the best by the quality score
            [--direction auto|stereo|pitch]  lanes follow the stereo position of the sound or its
                                     pitch (auto: stereo for clearly panned mixes); quick rules only
            [--title T --artist A --creator C]

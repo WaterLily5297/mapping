@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Audio
+- More precise note timing: sound peaks are located between analysis frames. On 40 held-out ranked songs the timing error went from 3.7 to 2.8 ms.
+- **Music energy curve** (the song's intensity / emotion per measure), learned from 451 ranked 4K/6K/7K maps: loudness, onset rate and strength, spectral flux, bass/mid/treble, brightness, noisiness, and the change against the previous and next measures. It follows where ranked maps get dense better than loudness alone: 7K 0.63 → 0.69, 6K 0.63 → 0.66, 4K 0.55 → 0.65, 6+★ 0.70 → 0.75 (held-out correlation).
+- 6K and 7K charts follow the energy curve (7K density shape 0.51 → 0.55 against ranked maps, 7K 6+★ 0.61 → 0.65); 4K keeps loudness, where the curve did not help the generated charts.
+
+### Generate
+- Quick rules makes several charts and keeps the best one by a quality score (star accuracy, notes on sounds, density following the energy curve, loud measures filled, cleanliness): about half the star error. `--candidates N` (default 3).
+
 ## 1.0.0 — 2026-11-26
 
 The first release: an osu!mania map generator and editor for any key count (1K–18K) that runs on your computer.

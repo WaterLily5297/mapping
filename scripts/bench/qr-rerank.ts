@@ -68,5 +68,6 @@ console.log(`${keys}K, ${songs.length} songs x ${nSeeds} seeds${minStars ? `, ${
 console.log(`spread within a song (best - worst): F1 ${avg((c) => Math.max(...c.map((x) => x.f1)) - Math.min(...c.map((x) => x.f1))).toFixed(3)}, skill-mix ${avg((c) => Math.max(...c.map((x) => x.skill)) - Math.min(...c.map((x) => x.skill))).toFixed(3)}`);
 line('one seed (average)', avg((c) => mean(c, 'f1')), avg((c) => mean(c, 'skill')), avg((c) => mean(c, 'dirt')), avg((c) => mean(c, 'starErr')));
 report('score (all parts)', pickBy((c) => c.total));
+for (let k = 2; k < nSeeds; k++) report(`score, best of ${k}`, (c) => pickBy((x) => x.total)(c.slice(0, k)));
 for (const k of ['stars', 'onBeat', 'energy', 'filled', 'clean'] as (keyof QualityParts)[]) report(`score: ${k}`, pickBy((c) => c.q[k]));
 report('oracle (best F1)', pickBy((c) => c.f1));

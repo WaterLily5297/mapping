@@ -122,11 +122,14 @@ export function generateForStars(
 
 /**
  * Quick rules candidates kept by best-of-N: each seed places the same rhythm in other patterns.
- * On held-out songs (scripts/bench/qr-rerank.ts, 6 seeds, picked by chartQuality) the kept chart
- * had 6-14% less dirt for 6K and 7K (7K 6+ stars 151 -> 142 per 1000 notes) and half the star
- * error (7K 0.029 -> 0.015), at the same rhythm F1 and pattern mix.
+ * On 10 held-out songs per group (scripts/bench/qr-rerank.ts, picked by chartQuality), rhythm F1 and
+ * pattern mix were the same for any N; star error per candidate count 1 / 3 / 6:
+ *   7K 0.029 / 0.018 / 0.015, 6K 0.023 / 0.011 / 0.014, 4K 0.074 / 0.053 / 0.049;
+ * dirt 7K 103 / 101 / 96, 7K 6+ stars 151 / 146 / 142, 6K 49 / 49 / 43, 4K no change (ranked maps on
+ * the same songs: 7K 129, 7K 6+ 182, 6K 60, 4K 228, so lower is not always closer to ranked).
+ * Each candidate costs a full generation (about 4 s for a 3-minute song), so 3 by default.
  */
-export const QR_CANDIDATES = 6;
+export const QR_CANDIDATES = 3;
 
 /** generateForStars for N seeds (opts.seed, +1, ...), keeping the chart with the best quality score */
 export function generateBestOf(
