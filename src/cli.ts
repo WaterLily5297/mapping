@@ -19,6 +19,7 @@ import { generateForStars, generateBestOf, QR_CANDIDATES } from './automap/targe
 import { starRating } from './analysis/difficulty';
 import { fitDifficulty, rebirthToOfficial, officialToRebirth } from './tools/difficultyfit';
 import { analyze, analyzeStereo, estimateTempo, stereoWidth } from './automap/analysis';
+import { aiBestOf } from './ai/bestof';
 import { detectTiming, toTimingPoints } from './automap/tempomap';
 import { createBeatmap } from './core/beatmap';
 import { findAiInstall, runMapperatorinator, listLoras, resolveLora, loraStoreDir, scriptsDir, type AiOptions, type AiJob } from './ai/mapperatorinator';
@@ -99,6 +100,8 @@ AI mapper (Mapperatorinator; set it up with: maniamap setup ai, or in the app):
            to the target afterwards
            [--tags style/jumpstream,skillset/speedjack] [--avoid tags] [--cfg 1.5]
            [--year 2023] [--seed S] [--start ms --end ms] [--device cpu|cuda|auto]
+           [--candidates N]  run the model N times, keep the chart with the best quality score
+                             (pattern mix closer to ranked maps, fewer fast jacks; N times slower)
            [--timing map.osu | --ai-timing]   (default: maniamap detects the BPM, much faster)
            [--lora NAME] [-o out.osz | out.osu] [--ai-dir DIR]
            [--model v32|mini]       V32 (default) or V32-mini (4x smaller, faster on a CPU)
@@ -199,6 +202,12 @@ export function decodeWithFfmpeg(path: string, sampleRate = 22050): Float32Array
 function loudnessFromAudio(path: string | undefined, map: Beatmap): ((t: number) => number) | undefined {
   if (!path || !existsSync(path) || !hasFfmpeg()) return undefined;
   try { return loudnessForMap(analyze(decodeWithFfmpeg(path, 22050), 22050), map); } catch { return undefined; }
+}
+
+/** the song's analysis for scoring candidates, or undefined without ffmpeg */
+function audioAnalysis(path: string) {
+  if (!hasFfmpeg()) return undefined;
+  try { return analyze(decodeWithFfmpeg(path, 22050), 22050); } catch { return undefined; }
 }
 
 /** left and right channels, or null for mono files */
@@ -318,6 +327,8 @@ interface ServerJob {
   removedOverlaps?: number;
   stars?: number;
   fitFrom?: number;
+  /** AI best of N: each candidate's quality score and the one kept */
+  candidates?: { scores: number[]; picked: number };
   error?: string;
 }
 let currentJob: ServerJob | null = null;
@@ -482,16 +493,15 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
       opts.stars = modelStars(keys, opts.stars!, !!opts.mapperId);
       const sj: ServerJob = { id: Math.random().toString(36).slice(2), state: 'running', log: [], started: Date.now() };
       currentJob = sj;
-      try {
-        sj.job = runMapperatorinator(opts, (line) => { sj.log.push(line); if (sj.log.length > 200) sj.log.shift(); }, inst);
-      } catch (e) {
-        rmSync(work, { recursive: true, force: true });
-        sj.state = 'error'; sj.error = (e as Error).message;
-        return sendJson(res, 400, { error: sj.error });
-      }
-      sj.job.done.then((r) => {
-        const target = Number(body.stars ?? 3.5);
-        const post = postprocessAiMap(r.osuText, { keys, stars: +target.toFixed(1), audioFilename: body.audioName, title: opts.title, artist: opts.artist, requestedTags: opts.descriptors });
+      const pushLog = (line: string) => { sj.log.push(line); if (sj.log.length > 200) sj.log.shift(); };
+      const target = Number(body.stars ?? 3.5);
+      const candidates = Math.max(1, Math.min(6, Math.round(Number(body.candidates) || 1)));
+      aiBestOf(candidates, opts, target, {
+        start: (o) => { const j = runMapperatorinator(o, pushLog, inst); sj.job = j; return j; },
+        post: (text) => postprocessAiMap(text, { keys, stars: +target.toFixed(1), audioFilename: body.audioName, title: opts.title, artist: opts.artist, requestedTags: opts.descriptors }),
+        log: pushLog, cancelled: () => sj.state === 'cancelled', analyze: () => audioAnalysis(audioPath),
+      }).then(({ best: post, scores, picked }) => {
+        if (scores.length) sj.candidates = { scores, picked };
         sj.stars = starRating(post.map).stars;
         if (body.fit && Math.abs(sj.stars - target) > 0.1) {
           const f = fitDifficulty(post.map, target, { seed: opts.seed, loudness: loudnessFromAudio(audioPath, post.map) });
@@ -520,7 +530,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
       }
       return sendJson(res, 200, {
         state: sj.state, seconds: Math.round((Date.now() - sj.started) / 1000), log: sj.log.slice(-12),
-        osu: sj.osu, styleCheck: sj.styleCheck, removedOverlaps: sj.removedOverlaps, stars: sj.stars, fitFrom: sj.fitFrom, error: sj.error,
+        osu: sj.osu, styleCheck: sj.styleCheck, removedOverlaps: sj.removedOverlaps, stars: sj.stars, fitFrom: sj.fitFrom, candidates: sj.candidates, error: sj.error,
       });
     }
     return sendJson(res, 404, { error: 'unknown endpoint' });
@@ -798,18 +808,23 @@ async function runAi(input: string, a: Args) {
   if (num(a, 'model-stars') === undefined) opts.stars = modelStars(keys, opts.stars!, !!opts.mapperId);
   console.log(`running Mapperatorinator ${opts.model === 'v32-mini' ? 'V32-mini' : 'V32'} mania model (${keys}K, target ${target.toFixed(2)} stars = model difficulty ${opts.stars!.toFixed(2)} osu!${opts.mapperId ? `, style of mapper ${mapperName(opts.mapperId)}` : ''}${opts.loraPath ? `, LoRA ${basename(opts.loraPath)}` : ''}${opts.descriptors ? `, ${opts.descriptors.join(', ')}` : ''})... the first run downloads the model (~0.9 GB)`);
   let last = 0;
-  const job = runMapperatorinator(opts, (line) => {
+  let job: AiJob | undefined;
+  const onLine = (line: string) => {
     // keep the terminal readable: show progress bars at most once per second
     const now = Date.now();
     if (/\d+%\|/.test(line)) { if (now - last > 1000) { last = now; process.stdout.write(`\r  ${line.slice(0, 110).padEnd(110)}`); } return; }
     if (/error|warn|saved|Using|seed|LoRA|Model loaded/i.test(line)) console.log(`\n  ${line.slice(0, 160)}`);
-  }, install);
-  process.on('SIGINT', () => { job.cancel(); process.exit(130); });
-  const res = await job.done.catch((e: Error) => die(e.message));
+  };
+  process.on('SIGINT', () => { job?.cancel(); process.exit(130); });
+  const candidates = Math.max(1, Math.round(num(a, 'candidates', 1)!));
+  if (candidates > 1) console.log(`best of ${candidates}: the model runs ${candidates} times and the chart with the best quality score is kept`);
+  const { best: post, scores, picked } = await aiBestOf(candidates, opts, target, {
+    start: (o) => { job = runMapperatorinator(o, onLine, install); return job; },
+    post: (text) => postprocessAiMap(text, { keys, stars: +target.toFixed(1), audioFilename: basename(input), title: opts.title, artist: opts.artist, requestedTags: opts.descriptors }),
+    log: (l) => { if (/quality/.test(l)) console.log(`\n${l}`); }, analyze: () => audioAnalysis(input),
+  }).catch((e: Error) => die(e.message));
   console.log('');
-  const post = postprocessAiMap(res.osuText, {
-    keys, stars: +target.toFixed(1), audioFilename: basename(input), title: opts.title, artist: opts.artist, requestedTags: opts.descriptors,
-  });
+  if (scores.length) console.log(`kept candidate ${picked + 1} of ${scores.length} (quality ${scores.map((q) => q.toFixed(2)).join(', ')})`);
   if (post.removedOverlaps) console.log(`removed ${post.removedOverlaps} overlapping notes`);
   const got = starRating(post.map).stars;
   console.log(`AI result: ${got.toFixed(2)} stars (target ${target.toFixed(2)})`);
