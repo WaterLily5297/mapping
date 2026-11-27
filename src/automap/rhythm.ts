@@ -17,7 +17,12 @@ export const RHYTHM_FEATURES = [
   'stars', 'bpm', 'starsXhalf', 'starsXquarter', 'starsXeighth', 'starsXtriplet', 'stepMs', 'bias',
 ] as const;
 
-export interface RhythmModel { w: number[]; mean: number[]; std: number[] }
+/**
+ * Logistic regression over standardised tick features, optionally with a small hidden layer added
+ * to its log-odds (ReLU units over the same standardised features; trained as a residual on top of
+ * the linear part, so without `mlp` the model is the plain linear one).
+ */
+export interface RhythmModel { w: number[]; mean: number[]; std: number[]; mlp?: { h: number; W1: number[]; b1: number[]; w2: number[]; b2: number } }
 
 export interface Tick { t: number; frame: number; beatIndex: number; beatFrac: number }
 
@@ -105,8 +110,18 @@ export function tickFeatures(ctx: RhythmContext, map: Beatmap, tk: Tick, stars: 
   ];
 }
 
-export function rhythmScore(m: RhythmModel, x: number[]): number {
+export function rhythmScore(m: RhythmModel, x: ArrayLike<number>): number {
+  const n = x.length, zs = new Float64Array(n);
   let z = 0;
-  for (let i = 0; i < x.length; i++) z += (m.w[i] ?? 0) * (m.std[i] > 0 ? (x[i] - m.mean[i]) / m.std[i] : x[i]);
+  for (let i = 0; i < n; i++) { zs[i] = m.std[i] > 0 ? (x[i] - m.mean[i]) / m.std[i] : x[i]; z += (m.w[i] ?? 0) * zs[i]; }
+  const h = m.mlp;
+  if (h) {
+    z += h.b2;
+    for (let j = 0; j < h.h; j++) {
+      let a = h.b1[j];
+      for (let i = 0; i < n; i++) a += h.W1[j * n + i] * zs[i];
+      if (a > 0) z += h.w2[j] * a;
+    }
+  }
   return 1 / (1 + Math.exp(-z));
 }

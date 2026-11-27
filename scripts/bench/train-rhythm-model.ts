@@ -4,7 +4,10 @@
  * from the shared weights and is pulled towards them (so a key count with fewer maps stays close
  * to the shared model).
  *
- *   npx tsx scripts/bench/train-rhythm-model.ts DATA_DIR [DATA_DIR...] [--cache DIR] [--write]
+ *   npx tsx scripts/bench/train-rhythm-model.ts DATA_DIR [DATA_DIR...] [--cache DIR] [--mlp 32] [--write]
+ *
+ * --mlp H adds H hidden ReLU units on top of the linear model (a residual on its log-odds, trained
+ * with Adam on minibatches), shared and then fine-tuned per key count.
  *
  * Split by beatmap set id (% 3 == 0 held out), each song once even when it sits in several data
  * folders. Up to 3 maps per song and key count. Reports held-out precision at the ranked note
@@ -24,10 +27,11 @@ import { RHYTHM_MODEL } from '../../src/automap/rhythmmodel';
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
-const dirs = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i - 1] === '--cache'));
+const dirs = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && ['--cache', '--mlp'].includes(argv[i - 1])));
 const cacheDir = opt('cache');
 const F = RHYTHM_FEATURES.length;
 const PER_KEY = [4, 6, 7];
+const H = Number(opt('mlp') ?? 0);
 
 function decode(path: string): Float32Array {
   const r = spawnSync('ffmpeg', ['-v', 'error', '-i', path, '-ac', '1', '-ar', '22050', '-f', 'f32le', '-'], { maxBuffer: 1 << 30 });
@@ -158,6 +162,75 @@ for (const k of PER_KEY) {
   perKey[k] = asModel(fit(cs, Float64Array.from(shared.w), 200, { w: Float64Array.from(shared.w), lambda: 0.01 }));
 }
 
+/** residual hidden layer on top of a linear model, Adam on shuffled minibatches */
+function fitMlp(cs: Chunk[], base: RhythmModel, epochs: number, lr: number, init?: RhythmModel['mlp']): NonNullable<RhythmModel['mlp']> {
+  const N = nOf(cs), Z = new Float32Array(N * F), Y = new Uint8Array(N), L = new Float32Array(N);
+  let o = 0;
+  for (const c of cs) for (let k = 0; k < c.y.length; k++, o++) {
+    let lin = 0;
+    for (let i = 0; i < F; i++) { const v = zOf(c.x[k * F + i], i); Z[o * F + i] = v; lin += base.w[i] * v; }
+    Y[o] = c.y[k]; L[o] = lin;
+  }
+  let seed = 12345;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) >>> 0; return seed / 2 ** 32; };
+  const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+  const P = H * F + H + H + 1; // W1, b1, w2, b2
+  const th = new Float64Array(P);
+  if (init) { th.set(init.W1, 0); th.set(init.b1, H * F); th.set(init.w2, H * F + H); th[P - 1] = init.b2; }
+  else for (let j = 0; j < H * F; j++) th[j] = gauss() * Math.sqrt(2 / F);
+  const m1 = new Float64Array(P), m2 = new Float64Array(P), g = new Float64Array(P), act = new Float64Array(H);
+  const order = new Uint32Array(N).map((_, i) => i);
+  const B = 1024;
+  let step = 0;
+  for (let e = 0; e < epochs; e++) {
+    for (let i = N - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = order[i]; order[i] = order[j]; order[j] = t; }
+    let loss = 0;
+    for (let b0 = 0; b0 < N; b0 += B) {
+      g.fill(0);
+      const b1 = Math.min(N, b0 + B);
+      for (let q = b0; q < b1; q++) {
+        const n = order[q];
+        let z = L[n] + th[P - 1];
+        for (let j = 0; j < H; j++) {
+          let a = th[H * F + j];
+          for (let i = 0; i < F; i++) a += th[j * F + i] * Z[n * F + i];
+          act[j] = a > 0 ? a : 0;
+          z += th[H * F + H + j] * act[j];
+        }
+        const p = 1 / (1 + Math.exp(-z)), d = p - Y[n];
+        loss -= Y[n] ? Math.log(p + 1e-9) : Math.log(1 - p + 1e-9);
+        g[P - 1] += d;
+        for (let j = 0; j < H; j++) {
+          g[H * F + H + j] += d * act[j];
+          if (act[j] > 0) { const dj = d * th[H * F + H + j]; g[H * F + j] += dj; for (let i = 0; i < F; i++) g[j * F + i] += dj * Z[n * F + i]; }
+        }
+      }
+      step++;
+      const bs = b1 - b0;
+      for (let k = 0; k < P; k++) {
+        const gk = g[k] / bs + 1e-5 * th[k];
+        m1[k] = 0.9 * m1[k] + 0.1 * gk; m2[k] = 0.999 * m2[k] + 0.001 * gk * gk;
+        th[k] -= lr * (m1[k] / (1 - 0.9 ** step)) / (Math.sqrt(m2[k] / (1 - 0.999 ** step)) + 1e-8);
+      }
+    }
+    console.log(`  epoch ${e + 1}: train log-loss ${(loss / N).toFixed(4)}`);
+  }
+  const r = (v: ArrayLike<number>) => Array.from(v, (x) => +x.toFixed(4));
+  return { h: H, W1: r(th.subarray(0, H * F)), b1: r(th.subarray(H * F, H * F + H)), w2: r(th.subarray(H * F + H, H * F + 2 * H)), b2: +th[P - 1].toFixed(4) };
+}
+let mlpShared: RhythmModel | undefined;
+const mlpPerKey: Record<number, RhythmModel> = {};
+if (H > 0) {
+  console.log(`training the hidden layer (${H} units)...`);
+  mlpShared = { ...shared, mlp: fitMlp(train, shared, 4, 2e-3) };
+  for (const k of PER_KEY) {
+    const cs = train.filter((c) => c.keys === k);
+    if (nOf(cs) < 50000) continue;
+    console.log(`fine-tuning for ${k}K...`);
+    mlpPerKey[k] = { ...shared, mlp: fitMlp(cs, shared, 1, 5e-4, mlpShared.mlp) };
+  }
+}
+
 /** held-out precision at the ranked note count, averaged over maps (each map ranks its own ticks) */
 function precision(cs: Chunk[], model: (c: Chunk) => RhythmModel): number {
   if (!cs.length) return NaN;
@@ -165,7 +238,7 @@ function precision(cs: Chunk[], model: (c: Chunk) => RhythmModel): number {
   for (const c of cs) {
     const m = model(c), n = c.y.length;
     const scored: [number, number][] = [];
-    for (let k = 0; k < n; k++) scored.push([rhythmScore(m, Array.from(c.x.subarray(k * F, k * F + F))), c.y[k]]);
+    for (let k = 0; k < n; k++) scored.push([rhythmScore(m, c.x.subarray(k * F, k * F + F)), c.y[k]]);
     scored.sort((a, b) => b[0] - a[0]);
     const pos = c.y.reduce((s, v) => s + v, 0);
     let hit = 0;
@@ -178,12 +251,18 @@ const groups: [string, (c: Chunk) => boolean][] = [];
 for (const k of PER_KEY) for (const [lo, hi] of [[0, 4], [4, 6], [6, 8], [8, 99]]) groups.push([`${k}K ${lo}-${hi === 99 ? '' : hi}★`, (c) => c.keys === k && c.stars >= lo && c.stars < hi]);
 groups.push(['other keys', (c) => !PER_KEY.includes(c.keys)]);
 console.log('\nheld-out precision at the ranked note count (per map, mean)');
-console.log(`${'group'.padEnd(14)} maps   shipped   new shared   per key`);
+console.log(`${'group'.padEnd(14)} maps   shipped   new shared   per key${H ? '   MLP     MLP per key' : ''}`);
 for (const [name, f] of groups) {
   const cs = test.filter(f);
   if (!cs.length) continue;
   const k = cs[0].keys;
-  console.log(`${name.padEnd(14)} ${String(cs.length).padStart(4)}   ${precision(cs, () => RHYTHM_MODEL).toFixed(3)}     ${precision(cs, () => shared).toFixed(3)}        ${perKey[k] ? precision(cs, () => perKey[k]).toFixed(3) : '  -  '}`);
+  const mlpCols = H ? `   ${precision(cs, () => mlpShared!).toFixed(3)}   ${mlpPerKey[k] ? precision(cs, () => mlpPerKey[k]).toFixed(3) : '  -  '}` : '';
+  console.log(`${name.padEnd(14)} ${String(cs.length).padStart(4)}   ${precision(cs, () => RHYTHM_MODEL).toFixed(3)}     ${precision(cs, () => shared).toFixed(3)}        ${perKey[k] ? precision(cs, () => perKey[k]).toFixed(3) : '  -  '}${mlpCols}`);
+}
+
+{
+  const all = (f: (c: Chunk) => RhythmModel) => precision(test.filter((c) => PER_KEY.includes(c.keys)), f);
+  console.log(`${'all 4/6/7K'.padEnd(14)} ${String(test.filter((c) => PER_KEY.includes(c.keys)).length).padStart(4)}   ${all(() => RHYTHM_MODEL).toFixed(3)}     ${all(() => shared).toFixed(3)}        ${all((c) => perKey[c.keys] ?? shared).toFixed(3)}${H ? `   ${all(() => mlpShared!).toFixed(3)}   ${all((c) => mlpPerKey[c.keys] ?? mlpShared!).toFixed(3)}` : ''}`);
 }
 
 if (argv.includes('--write')) {
