@@ -276,10 +276,11 @@ The adapter is trained on ranked beatmaps, so it is for personal use only, like 
 | rhythm F1 / skill-mix distance / fast jacks | one seed | best of N by the score | best possible pick (best skill mix) |
 |---|---|---|---|
 | 4K 5★+, N = 3 | 0.933 / 0.459 / 89 | **0.948 / 0.328** / 91 | 0.960 / 0.305 / 81 |
+| 6K 6–7★, N = 3 (4 songs) | 0.910 / 0.165 / 10.7 | **0.918 / 0.152** / 19.5 | 0.922 / 0.129 / 21.4 |
 | 7K 6★+, N = 4 | 0.914 / 0.167 / 14.4 | 0.911 / 0.163 / **11.7** | 0.917 / 0.141 / 11.3 |
 | 7K 2.3–4.3★, N = 3 | 0.912 / 0.307 / 0 | **0.920** / 0.307 / 0 | 0.905 / 0.247 / 0 |
 
-The score finds most of what there is to gain in 4K, where seeds differ most, and a smaller part in 7K. It is off by default because each candidate is a full AI run.
+The score finds most of what there is to gain in 4K, where seeds differ most, and a smaller part in 6K and 7K. On the same sections the ranked maps have 119 fast jacks (4K), 13 (6K), 2.8 (hard 7K) and 0 (mid 7K): in hard 6K the kept charts have more fast jacks than the ranked maps (only 4 held-out songs, so a tendency at most). It is off by default because each candidate is a full AI run.
 
 ### Development
 

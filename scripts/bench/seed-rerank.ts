@@ -38,6 +38,7 @@ const tv = (a: number[], b: number[]) => a.reduce((s, x, i) => s + Math.abs(x - 
 
 interface Cand { run: string; f1: number; skill: number; fastJ: number; q: QualityParts; total: number }
 const sections: Cand[][] = [];
+const refFastJ: number[] = [];
 const results = runs.map((r) => (existsSync(join(r, 'results.json')) ? JSON.parse(readFileSync(join(r, 'results.json'), 'utf8')) as { song: string; ref?: string; target: number }[] : []));
 for (const [idx, set] of sets.entries()) {
   const res = results[0].find((r) => set.startsWith(r.song.slice(0, 30)));
@@ -52,6 +53,7 @@ for (const [idx, set] of sets.entries()) {
   for (let i = 0, j = 0; i < times.length; i++) { while (times[j] < times[i] - win) j++; if (i - j + 1 > bestCount) { bestCount = i - j + 1; bestStart = times[i] - win; } }
   const start = Math.max(0, Math.round(bestStart)), end = start + win;
   const refCut = cut(ref, start, end);
+  refFastJ.push(dirt(refCut).fastJacks);
   const audio = readdirSync(dir).find((f) => /^audio\./.test(f))!;
   const a = analyze(decode(join(dir, audio)), 22050);
   const onsets = detectOnsets(a, 0.6);
@@ -74,4 +76,5 @@ console.log(`${'random (average)'.padEnd(22)} F1 ${avg((c) => mean(c, 'f1')).toF
 report('score (all parts)', pickBy((c) => c.total));
 for (const k of ['stars', 'onBeat', 'energy', 'filled', 'clean'] as (keyof QualityParts)[]) report(`score: ${k} only`, pickBy((c) => c.q[k]));
 report('oracle (best F1)', pickBy((c) => c.f1));
+console.log(`${'ranked map'.padEnd(22)} fast jacks ${(refFastJ.reduce((x, y) => x + y, 0) / Math.max(1, refFastJ.length)).toFixed(1)}`);
 report('oracle (best skill)', pickBy((c) => -c.skill));
