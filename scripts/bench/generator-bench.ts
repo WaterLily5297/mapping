@@ -25,6 +25,7 @@ import { parseOsu, getKeys, isLN, type Beatmap } from '../../src/core/beatmap';
 import { redLines } from '../../src/core/timing';
 import { analyze } from '../../src/automap/analysis';
 import { generateForStars } from '../../src/automap/target';
+import { _setContrastSource } from '../../src/automap/generate';
 import { starRating } from '../../src/analysis/difficulty';
 import { classifyPatterns } from '../../src/analysis/patterns';
 import { dirt } from '../../src/tools/cleanliness';
@@ -32,6 +33,8 @@ import { dirt } from '../../src/tools/cleanliness';
 const argv = process.argv.slice(2);
 const dataDir = argv[0];
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
+// --contrast-source energy|loudness
+if (opt('contrast-source')) _setContrastSource(opt('contrast-source') as 'energy' | 'loudness');
 const max = Number(opt('max') ?? 40);
 const keysFilter = (opt('keys') ?? '4,7').split(',').map(Number);
 const style = opt('style');

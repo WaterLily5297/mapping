@@ -17,6 +17,7 @@ import { gridTicksFor, gridDivisors, rhythmContext, tickFeatures, rhythmScore } 
 import { RHYTHM_MODEL } from './rhythmmodel';
 import { lnConvert } from '../tools/lnconvert';
 import { placeLongNotes } from './longnotes';
+import { energyCurve } from './energy';
 import { LN_MODEL } from './lnmodel';
 import { type Analysis, type Onset, analyze, detectOnsets, estimateTempo, beatPhase, ONSET_LATENCY, LATENCY_FRAC, WIN, stereoWidth, STEREO_WIDTH_AUTO } from './analysis';
 
@@ -409,9 +410,40 @@ export function loudnessAt(a: Analysis, windowMs: number): (t: number) => number
   return (t) => env[Math.max(0, Math.min(env.length - 1, Math.round(t / 1000 / a.frameDur)))] ?? 0;
 }
 
-/** loudnessAt over one measure of the map's first red line */
+/** what contrast follows: the learned music-energy curve (energy.ts) or loudness alone */
+export let CONTRAST_SOURCE: 'energy' | 'loudness' = 'loudness';
+export function _setContrastSource(s: 'energy' | 'loudness') { CONTRAST_SOURCE = s; }
+
+/**
+ * The learned energy curve as a per-frame z-score (measures of the map's first red line; linear
+ * between measure centres), the same shape as loudnessEnvelope.
+ */
+export function energyEnvelope(a: Analysis, map: Beatmap, onsets?: Onset[]): Float32Array {
+  const red = map.timingPoints.find((p) => p.uninherited && p.beatLength > 0);
+  const bar = (red?.beatLength ?? 500) * 4, off = red?.time ?? 0;
+  const dur = a.rms.length * a.frameDur * 1000;
+  const { starts, energy } = energyCurve(a, onsets ?? detectOnsets(a, 0.5), bar, off, 0, dur);
+  const env = new Float32Array(a.rms.length);
+  if (!starts.length) return env;
+  const centres = starts.map((s) => s + bar / 2);
+  let k = 0;
+  for (let f = 0; f < env.length; f++) {
+    const t = f * a.frameDur * 1000;
+    while (k + 1 < centres.length && centres[k + 1] <= t) k++;
+    if (t <= centres[0]) env[f] = energy[0];
+    else if (k + 1 >= centres.length) env[f] = energy[centres.length - 1];
+    else { const u = (t - centres[k]) / (centres[k + 1] - centres[k]); env[f] = energy[k] * (1 - u) + energy[k + 1] * u; }
+  }
+  return env;
+}
+
+/** contrast-aware star adjustment: the song's intensity at time t for this map (CONTRAST_SOURCE) */
 export function loudnessForMap(a: Analysis, map: Beatmap): (t: number) => number {
   const red = map.timingPoints.find((p) => p.uninherited && p.beatLength > 0);
+  if (CONTRAST_SOURCE === 'energy') {
+    const env = energyEnvelope(a, map);
+    return (t) => env[Math.max(0, Math.min(env.length - 1, Math.round(t / 1000 / a.frameDur)))] ?? 0;
+  }
   return loudnessAt(a, (red?.beatLength ?? 500) * 4);
 }
 
@@ -423,7 +455,7 @@ export function learnedRhythm(a: Analysis, map: Beatmap, divisors: number | numb
   const first = onsets[0]?.time ?? 0, last = onsets[onsets.length - 1]?.time ?? end;
   const ticks = gridTicksFor(map, divs, Math.max(0, first - 100), Math.min(end, last + 100));
   const cur = { i: 0 };
-  const env = contrast ? loudnessEnvelope(a, windowMs) : null;
+  const env = contrast ? (CONTRAST_SOURCE === 'energy' ? energyEnvelope(a, map, onsets) : loudnessEnvelope(a, windowMs)) : null;
   const scored = ticks.map((tk) => {
     const x = tickFeatures(ctx, map, tk, stars, cur, finest);
     const f = Math.max(0, Math.min(a.flux.length - 1, tk.frame));

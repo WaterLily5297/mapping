@@ -17,12 +17,14 @@ import { spawnSync } from 'node:child_process';
 import { parseOsu, getKeys, isLN, type Beatmap } from '../../src/core/beatmap';
 import { redLines } from '../../src/core/timing';
 import { analyze } from '../../src/automap/analysis';
-import { loudnessEnvelope } from '../../src/automap/generate';
+import { loudnessEnvelope, energyEnvelope, CONTRAST_SOURCE, _setContrastSource } from '../../src/automap/generate';
 import { starRating } from '../../src/analysis/difficulty';
 import { fitDifficulty } from '../../src/tools/difficultyfit';
 import { measureContour, pearson } from './contour';
 
 const argv = process.argv.slice(2);
+// --contrast-source energy|loudness
+{ const i = argv.indexOf('--contrast-source'); if (i >= 0) _setContrastSource(argv[i + 1] as 'energy' | 'loudness'); }
 const dataDir = argv[0];
 const opt = (k: string, d: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
 const keys = Number(opt('keys', '7')), nSongs = Number(opt('songs', '20')), gap = Number(opt('gap', '1'));
@@ -65,7 +67,7 @@ for (const set of readdirSync(dataDir).sort()) {
   songs++;
   const a = analyze(decode(join(dir, audio)), 22050);
   const red = redLines(pairs[0][0].m)[0];
-  const env = loudnessEnvelope(a, red.beatLength * 4);
+  const env = CONTRAST_SOURCE === 'energy' ? energyEnvelope(a, pairs[0][0].m) : loudnessEnvelope(a, red.beatLength * 4);
   const loudAt = (t: number) => env[Math.max(0, Math.min(env.length - 1, Math.round(t / 1000 / a.frameDur)))] ?? 0;
   const fitOpts = weight ? { loudness: loudAt, loudnessWeight: weight, ...(peakW ? { peakWeight: Number(peakW) } : {}) } : {};
   for (const [E, H] of pairs.slice(0, 2)) {

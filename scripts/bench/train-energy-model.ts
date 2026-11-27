@@ -34,8 +34,10 @@ const pearson = (x: number[], y: number[]) => { const a = zs(x), b = zs(y); retu
 interface MapRow { id: number; keys: number; stars: number; x: number[][]; y: number[] }
 let rows: MapRow[] = [];
 if (cache && existsSync(cache)) rows = JSON.parse(readFileSync(cache, 'utf8'));
-else {
-  const seen = new Set<number>();
+// incremental: songs already in the cache are skipped, new folders are added
+{
+  const seen = new Set<number>(rows.map((r) => r.id));
+  const before = rows.length;
   for (const dir of dirs) for (const set of readdirSync(dir).sort()) {
     const p = join(dir, set);
     if (!statSync(p).isDirectory()) continue;
@@ -61,7 +63,7 @@ else {
       if (seen.size % 25 === 0) console.log(`${seen.size} songs, ${rows.length} maps`);
     } catch (e) { console.log(`skipped ${set}: ${(e as Error).message}`); }
   }
-  if (cache) writeFileSync(cache, JSON.stringify(rows));
+  if (cache && rows.length !== before) writeFileSync(cache, JSON.stringify(rows));
 }
 
 const train = rows.filter((r) => r.id % 3 !== 0), test = rows.filter((r) => r.id % 3 === 0);
