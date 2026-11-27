@@ -9,11 +9,12 @@ export const SEED_STEP = 7919;
 
 /**
  * AI best of N: run the model N times with seeds spaced apart and keep the result with the best
- * quality score (the same score as Quick rules' best of N). On 6 held-out hard 4K songs, best of 3
- * moved the pattern mix closer to the ranked map (skill-mix distance 0.45 -> 0.34) with 10% fewer
- * fast jacks at the same rhythm F1; on hard 7K (best of 4) skill mix 0.163 -> 0.154 and fast
- * jacks 20 -> 13, rhythm F1 0.926 -> 0.918 (scripts/bench/seed-rerank.ts). Each candidate is a
- * full AI run, so it is opt-in. `start` is called once per candidate, in turn.
+ * quality score (the same score as Quick rules' best of N), taken on the raw AI output. Measured as
+ * delivered, after the star adjustment (scripts/bench/seed-rerank.ts --fit), on held-out songs:
+ * hard 4K best of 3: rhythm F1 0.933 -> 0.948, skill-mix distance 0.459 -> 0.328, fast jacks the
+ * same; hard 7K best of 4: F1 0.914 -> 0.911, skill mix 0.167 -> 0.163, fast jacks 14.4 -> 11.7;
+ * mid 7K best of 3: F1 0.912 -> 0.920. Each candidate is a full AI run, so it is opt-in. `start`
+ * is called once per candidate, in turn.
  */
 export async function aiBestOf<P extends { map: Beatmap }>(n: number, opts: AiOptions, targetStars: number, o: {
   start: (opts: AiOptions) => Pick<AiJob, 'done'>; post: (osuText: string) => P;

@@ -269,19 +269,19 @@ At 6.9–10.3★ (6 songs, each song's hardest 7K difficulty, none of them in th
 
 So the 7K default (`src/ai/defaults.ts`) is **plain V32, without a reference mapper**, chosen for 6★ and up. At high difficulty the reference mapper (the catalog picks Blocko for 7K 7–10★) pulls the charts away from the ranked maps and adds fast jacks; the mania-7k LoRA recovers part of that but not all, and on its own it matches plain V32's rhythm but moves the pattern mix away from the ranked maps (0.08 → 0.17). Around 3★ the mapper does help the pattern mix, and V32-mini + mapper would be the pick there. The model's star bias depends on the difficulty (−0.5 to −0.9★ around 3★, about 0 at 8★), so there is no fixed 7K difficulty boost: the star adjustment after generation brings every setup within 0.15★. `--mapper auto`, `--lora mania-7k` and `--model mini` override the default. Six songs per test is a small sample, so read the differences as tendencies. To repeat it: `scripts/bench/compare-ai.ts DATA_DIR --keys 7 --min-stars 6 --mapper auto --lora mania-7k`, then `scripts/bench/summarize-ai.ts`.
 
-**Best of N.** The same song gives quite different AI charts with different seeds, most of all in 4K. On 6 hard held-out 4K songs (5★+, 30-second sections, 3 seeds), the same section differed by 0.08 in rhythm F1 and 0.32 in skill-mix distance between its best and worst seed. One song went from F1 0.69 / skill-mix 0.81 with one seed to 0.98 / 0.02 with another. *Best of N* (`--candidates N`) runs the model N times with seeds 7919 apart and keeps the chart with the best quality score (`src/automap/quality.ts`). That score uses only what is known at generation time: star accuracy, rows on detected sounds, density against the music-energy curve, loud measures filled, cleanliness. Held-out results (`scripts/bench/seed-rerank.ts`):
-
-| | one seed | best of N by the score | best possible pick |
-|---|---|---|---|
-| 4K 5★+, N = 3: rhythm F1 / skill-mix distance / fast jacks | 0.952 / 0.453 / 101 | 0.955 / **0.338** / **91** | 0.968 / 0.313 / 83 |
-| 7K 6★+, N = 4 | 0.926 / 0.163 / 19.9 | 0.918 / **0.154** / **13.1** | 0.937 / 0.120 / 17.9 |
-
-The score finds most of what there is to gain in 4K and a part of it in 7K, where seeds differ less. It is off by default because each candidate is a full AI run.
-
 The adapter is trained on ranked beatmaps, so it is for personal use only, like the maps themselves. Train your own copy with `maniamap lora-dataset` on 7K maps and `maniamap lora-train ... --name mania-7k`, or install a copy you have with `maniamap lora-import mania-7k-lora.zip --name mania-7k`.
 
-### Development
+**Best of N.** The same song gives quite different AI charts with different seeds, most of all in 4K. On 6 hard held-out 4K songs (5★+, 30-second sections, 3 seeds), the same section differed by 0.08 in rhythm F1 and 0.32 in skill-mix distance between its best and worst seed. One song went from F1 0.69 / skill-mix 0.81 with one seed to 0.98 / 0.02 with another. *Best of N* (`--candidates N`) runs the model N times with seeds 7919 apart and keeps the chart with the best quality score (`src/automap/quality.ts`). That score uses only what is known at generation time: star accuracy, rows on detected sounds, density against the music-energy curve, loud measures filled, cleanliness. Held-out results, measured on the charts as delivered, after the star adjustment (`scripts/bench/seed-rerank.ts --fit`):
 
+| rhythm F1 / skill-mix distance / fast jacks | one seed | best of N by the score | best possible pick (best skill mix) |
+|---|---|---|---|
+| 4K 5★+, N = 3 | 0.933 / 0.459 / 89 | **0.948 / 0.328** / 91 | 0.960 / 0.305 / 81 |
+| 7K 6★+, N = 4 | 0.914 / 0.167 / 14.4 | 0.911 / 0.163 / **11.7** | 0.917 / 0.141 / 11.3 |
+| 7K 2.3–4.3★, N = 3 | 0.912 / 0.307 / 0 | **0.920** / 0.307 / 0 | 0.905 / 0.247 / 0 |
+
+The score finds most of what there is to gain in 4K, where seeds differ most, and a smaller part in 7K. It is off by default because each candidate is a full AI run.
+
+### Development
 
 ```bash
 npm install

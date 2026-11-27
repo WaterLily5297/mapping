@@ -9,7 +9,7 @@
 
 ### Generate
 - Quick rules makes several charts and keeps the best one by a quality score (star accuracy, notes on sounds, density following the energy curve, loud measures filled, cleanliness): about half the star error. `--candidates N` (default 3).
-- **AI: Best of N** (Generate → Best of, or `maniamap ai --candidates N`): the model runs N times and the chart with the best quality score is kept. The AI's charts differ a lot between seeds, most of all in 4K: on hard held-out 4K songs best of 3 moved the pattern mix much closer to the ranked map (distance 0.45 → 0.34) with fewer fast jacks; on hard 7K the pattern mix and fast jacks improved slightly (20 → 13 fast jacks). N times slower, so it is off by default.
+- **AI: Best of N** (Generate → Best of, or `maniamap ai --candidates N`): the model runs N times and the chart with the best quality score is kept. The AI's charts differ a lot between seeds, most of all in 4K: on hard held-out 4K songs best of 3 moved the pattern mix much closer to the ranked map (distance 0.46 → 0.33) and improved rhythm (F1 0.933 → 0.948); on hard 7K it cut fast jacks (14.4 → 11.7), on mid 7K it improved rhythm a little (0.912 → 0.920). Measured on the delivered charts, after the star adjustment. N times slower, so it is off by default.
 
 ## 1.0.0 — 2026-11-26
 

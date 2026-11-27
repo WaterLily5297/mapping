@@ -64,7 +64,7 @@ maniamap help                                                  # everything else
 |---|---|
 | `maniamap: command not found` | Open a new terminal (or log out and in), or run `~/.local/bin/maniamap`. |
 | The AI setup stops | Run `maniamap doctor`; it names what is missing (usually `git` or `ffmpeg`: `sudo apt install git ffmpeg`). Then click **Set up the AI** again, or run `maniamap setup ai`. |
-| AI charts differ a lot from run to run | Set *Best of* to 2 or 3 under the AI settings: the AI runs that many times and the best chart is kept (most useful in 4K). It takes that many times longer. |
+| AI charts differ a lot from run to run | Set *Best of* to 2 or 3 under the AI settings: the AI runs that many times and the best chart is kept (most useful in 4K, where the pattern mix gets much closer to ranked maps). It takes that many times longer. |
 | AI maps take long | Normal on a CPU: a few minutes per minute of song. Pick *V32-mini* under the AI settings for about twice the speed, or use an NVIDIA GPU. |
 | The beat feels off | Check the BPM on the Generate screen (×2 / ÷2), or drop the song's `.osz` to reuse its timing. |
 | Nothing opens from the menu | The log is in `~/.local/state/maniamap/app.log`; `maniamap editor` in a terminal shows errors directly. |

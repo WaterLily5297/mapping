@@ -4,7 +4,10 @@
  * the ranked map (rhythm F1, skill-mix distance, fast jacks) and compare: the candidate the score
  * picks, a random candidate (the average), and the best one (oracle).
  *
- *   npx tsx scripts/bench/seed-rerank.ts DATA_DIR KEYS RUN_DIR [RUN_DIR...]
+ *   npx tsx scripts/bench/seed-rerank.ts DATA_DIR KEYS RUN_DIR [RUN_DIR...] [--fit]
+ *
+ * --fit: measure each candidate after the star adjustment, as the app delivers it (the score is
+ * still taken on the raw AI output, as in the app).
  */
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -14,8 +17,11 @@ import { analyze, detectOnsets } from '../../src/automap/analysis';
 import { classifyPatterns } from '../../src/analysis/patterns';
 import { dirt } from '../../src/tools/cleanliness';
 import { chartQuality, type QualityParts } from '../../src/automap/quality';
+import { fitDifficulty } from '../../src/tools/difficultyfit';
 
-const [dataDir, keysArg, ...runs] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const withFit = args.includes('--fit');
+const [dataDir, keysArg, ...runs] = args.filter((x) => x !== '--fit');
 void keysArg;
 const sets = readdirSync(dataDir).sort();
 function decode(path: string): Float32Array {
@@ -50,8 +56,9 @@ for (const [idx, set] of sets.entries()) {
   const a = analyze(decode(join(dir, audio)), 22050);
   const onsets = detectOnsets(a, 0.6);
   const cands: Cand[] = files.map((f, i) => {
-    const m = cut(parseOsu(readFileSync(f, 'utf8')), start, end);
-    const q = chartQuality(m, a, res.target, { onsets, t0: start, t1: end });
+    const raw = cut(parseOsu(readFileSync(f, 'utf8')), start, end);
+    const q = chartQuality(raw, a, res.target, { onsets, t0: start, t1: end });
+    const m = withFit ? fitDifficulty(raw, res.target, { seed: 7 }).map : raw;
     return { run: basename(runs[i]), f1: f1(m, refCut), skill: tv(sk(m), sk(refCut)), fastJ: dirt(m).fastJacks, q: q.parts, total: q.total };
   });
   sections.push(cands);
@@ -61,7 +68,7 @@ const avg = (f: (c: Cand[]) => number) => sections.reduce((s, c) => s + f(c), 0)
 const mean = (c: Cand[], k: 'f1' | 'skill' | 'fastJ') => c.reduce((s, x) => s + x[k], 0) / c.length;
 const pickBy = (score: (c: Cand) => number) => (c: Cand[]) => c.reduce((a, b) => (score(b) > score(a) ? b : a));
 const report = (name: string, pick: (c: Cand[]) => Cand) => console.log(`${name.padEnd(22)} F1 ${avg((c) => pick(c).f1).toFixed(3)}  skill-mix distance ${avg((c) => pick(c).skill).toFixed(3)}  fast jacks ${avg((c) => pick(c).fastJ).toFixed(1)}`);
-console.log(`\n${sections.length} sections x ${runs.length} candidates`);
+console.log(`\n${sections.length} sections x ${runs.length} candidates${withFit ? ' (measured after the star adjustment)' : ''}`);
 console.log(`spread within a section: F1 ${avg((c) => Math.max(...c.map((x) => x.f1)) - Math.min(...c.map((x) => x.f1))).toFixed(3)}, skill-mix ${avg((c) => Math.max(...c.map((x) => x.skill)) - Math.min(...c.map((x) => x.skill))).toFixed(3)} (best - worst, mean)`);
 console.log(`${'random (average)'.padEnd(22)} F1 ${avg((c) => mean(c, 'f1')).toFixed(3)}  skill-mix distance ${avg((c) => mean(c, 'skill')).toFixed(3)}  fast jacks ${avg((c) => mean(c, 'fastJ')).toFixed(1)}`);
 report('score (all parts)', pickBy((c) => c.total));
