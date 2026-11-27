@@ -1,13 +1,18 @@
 /**
- * Train the rhythm model: for each grid tick, does the ranked map have a note there?
- * Writes src/automap/rhythmmodel.ts.
+ * Train the rhythm model: for each grid tick, does the ranked map have a note there? Logistic
+ * regression over tickFeatures(). One shared model, plus one per key count (4K, 6K, 7K) that starts
+ * from the shared weights and is pulled towards them (so a key count with fewer maps stays close
+ * to the shared model).
  *
- *   npx tsx scripts/bench/train-rhythm-model.ts DATA_DIR [DATA_DIR...] [--holdout 3] [--cache f.bin]
+ *   npx tsx scripts/bench/train-rhythm-model.ts DATA_DIR [DATA_DIR...] [--cache DIR] [--write]
  *
- * Songs whose index (sorted, per data dir) is divisible by --holdout are kept out for testing,
- * the same split as the style model and generator-bench --holdout.
+ * Split by beatmap set id (% 3 == 0 held out), each song once even when it sits in several data
+ * folders. Up to 3 maps per song and key count. Reports held-out precision at the ranked note
+ * count (pick as many ticks as the map has rows) per key count and star range, for the shipped
+ * model, the new shared model and the per-key models. --write writes src/automap/rhythmmodel.ts.
+ * --cache DIR keeps the extracted ticks (incremental: songs already there are not analysed again).
  */
-import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, statSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseOsu, getKeys, isLN, type Beatmap } from '../../src/core/beatmap';
@@ -15,13 +20,14 @@ import { redLines } from '../../src/core/timing';
 import { analyze, detectOnsets } from '../../src/automap/analysis';
 import { starRating } from '../../src/analysis/difficulty';
 import { RHYTHM_FEATURES, gridTicksFor, gridDivisors, rhythmContext, tickFeatures, rhythmScore, type RhythmModel } from '../../src/automap/rhythm';
+import { RHYTHM_MODEL } from '../../src/automap/rhythmmodel';
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
-const dirs = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i - 1].startsWith('--')));
-const holdout = Number(opt('holdout') ?? 3);
-const cache = opt('cache');
+const dirs = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i - 1] === '--cache'));
+const cacheDir = opt('cache');
 const F = RHYTHM_FEATURES.length;
+const PER_KEY = [4, 6, 7];
 
 function decode(path: string): Float32Array {
   const r = spawnSync('ffmpeg', ['-v', 'error', '-i', path, '-ac', '1', '-ar', '22050', '-f', 'f32le', '-'], { maxBuffer: 1 << 30 });
@@ -29,106 +35,169 @@ function decode(path: string): Float32Array {
   return new Float32Array(b.buffer, b.byteOffset, Math.floor(b.byteLength / 4)).slice();
 }
 
-let X: number[] = [];
-let Y: number[] = [];
-let T: number[] = []; // 1 = test
-if (cache && existsSync(cache)) ({ X, Y, T } = JSON.parse(readFileSync(cache, 'utf8')));
-else {
-  for (const dir of dirs) {
-    readdirSync(dir).sort().forEach((set, idx) => {
-      const p = join(dir, set);
-      let files: string[];
-      try { files = readdirSync(p); } catch { return; }
-      const audio = files.find((f) => /^audio\./.test(f));
-      if (!audio) return;
-      const maps: Beatmap[] = [];
-      for (const f of files.filter((x) => x.endsWith('.osu'))) {
-        try {
-          const m = parseOsu(readFileSync(join(p, f), 'utf8'));
-          if (redLines(m).length === 1 && getKeys(m) >= 4 && getKeys(m) <= 10 && m.notes.length > 100
-            && m.notes.filter(isLN).length / m.notes.length < 0.2) maps.push(m);
-        } catch { /* skip */ }
-      }
-      if (!maps.length) return;
-      const a = analyze(decode(join(p, audio)), 22050);
-      const ctx = rhythmContext(a, detectOnsets(a, 0.5));
-      for (const m of maps) {
-        const beat = redLines(m)[0].beatLength;
-        const stars = starRating(m).stars;
-        const divs = gridDivisors(beat, stars);
-        const finest = Math.max(...divs);
-        const rows = [...new Set(m.notes.map((n) => n.time))].sort((x, y) => x - y);
-        const ticks = gridTicksFor(m, divs, rows[0] - beat * 2, rows[rows.length - 1] + 1);
-        // ticks are at least 1/24 beat apart (1/8 next to 1/6): keep the label window inside that
-        const tol = Math.max(8, Math.min(20, beat / 24 / 2));
-        const cur = { i: 0 };
-        let ri = 0;
-        for (const tk of ticks) {
-          const x = tickFeatures(ctx, m, tk, stars, cur, finest);
-          while (ri < rows.length && rows[ri] < tk.t - tol) ri++;
-          X.push(...x);
-          Y.push(ri < rows.length && Math.abs(rows[ri] - tk.t) <= tol ? 1 : 0);
-          T.push(idx % holdout === 0 ? 1 : 0);
-        }
-      }
-      console.log(`${Y.length} ticks  ${set.slice(0, 50)}`);
-    });
+/** one map's ticks: features (F per tick), labels, and the map's key count, stars and song id */
+interface Chunk { id: number; keys: number; stars: number; x: Float32Array; y: Uint8Array }
+const chunks: Chunk[] = [];
+const done = new Set<number>();
+// cache: index.jsonl (one line per map: id, keys, stars, ticks, byte offset) + x.f32 + y.u8
+if (cacheDir) {
+  mkdirSync(cacheDir, { recursive: true });
+  const idx = join(cacheDir, 'index.jsonl');
+  if (existsSync(idx)) {
+    const xb = readFileSync(join(cacheDir, 'x.f32')), yb = readFileSync(join(cacheDir, 'y.u8'));
+    for (const line of readFileSync(idx, 'utf8').split('\n').filter(Boolean)) {
+      const e = JSON.parse(line) as { id: number; keys: number; stars: number; n: number; off: number };
+      done.add(e.id);
+      if (e.n === 0) continue;
+      chunks.push({ id: e.id, keys: e.keys, stars: e.stars,
+        x: new Float32Array(xb.buffer.slice(xb.byteOffset + e.off * F * 4, xb.byteOffset + (e.off + e.n) * F * 4)),
+        y: new Uint8Array(yb.buffer.slice(yb.byteOffset + e.off, yb.byteOffset + e.off + e.n)) });
+    }
   }
-  if (cache) writeFileSync(cache, JSON.stringify({ X, Y, T }));
+}
+let offset = chunks.reduce((s, c) => s + c.y.length, 0);
+const before = done.size;
+for (const dir of dirs) for (const set of readdirSync(dir).sort()) {
+  const id = Number(set.split(' ')[0]);
+  if (!Number.isFinite(id) || done.has(id)) continue;
+  const p = join(dir, set);
+  let files: string[];
+  try { if (!statSync(p).isDirectory()) continue; files = readdirSync(p); } catch { continue; }
+  const audio = files.find((f) => /^audio\./.test(f));
+  if (!audio) continue;
+  const byKeys = new Map<number, { m: Beatmap; s: number }[]>();
+  for (const f of files.filter((x) => x.endsWith('.osu'))) {
+    try {
+      const m = parseOsu(readFileSync(join(p, f), 'utf8'));
+      const k = getKeys(m);
+      if (redLines(m).length === 1 && k >= 4 && k <= 10 && m.notes.length > 100 && m.notes.filter(isLN).length / m.notes.length < 0.2) {
+        (byKeys.get(k) ?? byKeys.set(k, []).get(k)!).push({ m, s: starRating(m).stars });
+      }
+    } catch { /* skip */ }
+  }
+  done.add(id);
+  const maps = [...byKeys.values()].flatMap((l) => {
+    // up to 3 per key count, spread over the star range (hardest, easiest, middle)
+    l.sort((a, b) => b.s - a.s);
+    return l.length <= 3 ? l : [l[0], l[l.length - 1], l[Math.floor(l.length / 2)]];
+  });
+  const lines: string[] = [];
+  if (maps.length) {
+    let a;
+    try { a = analyze(decode(join(p, audio)), 22050); } catch { continue; }
+    const ctx = rhythmContext(a, detectOnsets(a, 0.5));
+    for (const { m, s: stars } of maps) {
+      const beat = redLines(m)[0].beatLength;
+      const divs = gridDivisors(beat, stars);
+      const finest = Math.max(...divs);
+      const rows = [...new Set(m.notes.map((n) => n.time))].sort((x, y) => x - y);
+      const ticks = gridTicksFor(m, divs, rows[0] - beat * 2, rows[rows.length - 1] + 1);
+      // ticks are at least 1/24 beat apart (1/8 next to 1/6): keep the label window inside that
+      const tol = Math.max(8, Math.min(20, beat / 24 / 2));
+      const cur = { i: 0 };
+      const x = new Float32Array(ticks.length * F), y = new Uint8Array(ticks.length);
+      let ri = 0;
+      ticks.forEach((tk, n) => {
+        x.set(tickFeatures(ctx, m, tk, stars, cur, finest), n * F);
+        while (ri < rows.length && rows[ri] < tk.t - tol) ri++;
+        y[n] = ri < rows.length && Math.abs(rows[ri] - tk.t) <= tol ? 1 : 0;
+      });
+      const keys = getKeys(m);
+      chunks.push({ id, keys, stars, x, y });
+      if (cacheDir) {
+        appendFileSync(join(cacheDir, 'x.f32'), Buffer.from(x.buffer));
+        appendFileSync(join(cacheDir, 'y.u8'), Buffer.from(y.buffer));
+        lines.push(JSON.stringify({ id, keys, stars: +stars.toFixed(3), n: y.length, off: offset }));
+      }
+      offset += y.length;
+    }
+  }
+  if (cacheDir) appendFileSync(join(cacheDir, 'index.jsonl'), (lines.length ? lines : [JSON.stringify({ id, keys: 0, stars: 0, n: 0, off: offset })]).join('\n') + '\n');
+  if ((done.size - before) % 25 === 0) console.log(`${done.size} songs, ${chunks.length} maps, ${offset} ticks`);
 }
 
-const N = Y.length;
-const mean = new Array(F).fill(0), std = new Array(F).fill(0);
-let nTrain = 0;
-for (let n = 0; n < N; n++) if (!T[n]) { nTrain++; for (let i = 0; i < F; i++) mean[i] += X[n * F + i]; }
+const isTest = (c: Chunk) => c.id % 3 === 0;
+const train = chunks.filter((c) => !isTest(c)), test = chunks.filter(isTest);
+const nOf = (cs: Chunk[]) => cs.reduce((s, c) => s + c.y.length, 0);
+console.log(`\n${new Set(chunks.map((c) => c.id)).size} songs, ${chunks.length} maps: ${nOf(train)} train ticks, ${nOf(test)} held-out ticks`);
+
+// standardise on the training ticks (the bias feature stays as it is)
+const mean = new Float64Array(F), std = new Float64Array(F);
+const nTrain = nOf(train);
+for (const c of train) for (let n = 0; n < c.y.length; n++) for (let i = 0; i < F; i++) mean[i] += c.x[n * F + i];
 for (let i = 0; i < F; i++) mean[i] /= nTrain;
-for (let n = 0; n < N; n++) if (!T[n]) for (let i = 0; i < F; i++) std[i] += (X[n * F + i] - mean[i]) ** 2;
+for (const c of train) for (let n = 0; n < c.y.length; n++) for (let i = 0; i < F; i++) std[i] += (c.x[n * F + i] - mean[i]) ** 2;
 for (let i = 0; i < F; i++) std[i] = Math.sqrt(std[i] / nTrain);
 mean[F - 1] = 0; std[F - 1] = 0;
-const Z = new Float32Array(N * F);
-for (let n = 0; n < N; n++) for (let i = 0; i < F; i++) Z[n * F + i] = std[i] > 0 ? (X[n * F + i] - mean[i]) / std[i] : X[n * F + i];
+const zOf = (v: number, i: number) => (std[i] > 0 ? (v - mean[i]) / std[i] : v);
 
-const w = new Float64Array(F);
-for (let epoch = 0; epoch < 300; epoch++) {
-  const g = new Float64Array(F);
-  for (let n = 0; n < N; n++) {
-    if (T[n]) continue;
-    let z = 0;
-    for (let i = 0; i < F; i++) z += w[i] * Z[n * F + i];
-    const d = 1 / (1 + Math.exp(-z)) - Y[n];
-    for (let i = 0; i < F; i++) g[i] += d * Z[n * F + i];
+/** full-batch gradient descent; `prior` pulls the weights towards a reference model */
+function fit(cs: Chunk[], init: Float64Array, epochs: number, prior?: { w: Float64Array; lambda: number }): Float64Array {
+  const w = Float64Array.from(init), n = nOf(cs), z = new Float64Array(F);
+  for (let e = 0; e < epochs; e++) {
+    const g = new Float64Array(F);
+    for (const c of cs) for (let k = 0; k < c.y.length; k++) {
+      let s = 0;
+      for (let i = 0; i < F; i++) { z[i] = zOf(c.x[k * F + i], i); s += w[i] * z[i]; }
+      const d = 1 / (1 + Math.exp(-s)) - c.y[k];
+      for (let i = 0; i < F; i++) g[i] += d * z[i];
+    }
+    for (let i = 0; i < F; i++) w[i] -= 0.5 * (g[i] / n + 1e-4 * w[i] + (prior ? prior.lambda * (w[i] - prior.w[i]) : 0));
   }
-  for (let i = 0; i < F; i++) w[i] -= 0.5 * (g[i] / nTrain + 1e-4 * w[i]);
+  return w;
 }
-const model: RhythmModel = { w: [...w].map((v) => +v.toFixed(4)), mean: mean.map((v) => +v.toFixed(4)), std: std.map((v) => +v.toFixed(4)) };
+const asModel = (w: Float64Array): RhythmModel => ({ w: [...w].map((v) => +v.toFixed(4)), mean: [...mean].map((v) => +v.toFixed(4)), std: [...std].map((v) => +v.toFixed(4)) });
 
-// held-out: precision at the true number of notes (pick as many ticks as the map has notes)
-function evalTop(test: boolean, score: (n: number) => number) {
-  const idx: number[] = [];
-  for (let n = 0; n < N; n++) if (!!T[n] === test) idx.push(n);
-  const pos = idx.filter((n) => Y[n]).length;
-  const sorted = idx.map((n) => [score(n), Y[n]] as const).sort((a, b) => b[0] - a[0]);
-  let hit = 0;
-  for (let k = 0; k < pos; k++) hit += sorted[k][1];
-  return hit / Math.max(1, pos);
+console.log('training the shared model...');
+const shared = asModel(fit(train, new Float64Array(F), 300));
+const perKey: Record<number, RhythmModel> = {};
+for (const k of PER_KEY) {
+  const cs = train.filter((c) => c.keys === k);
+  if (nOf(cs) < 50000) continue;
+  console.log(`training ${k}K (${cs.length} maps)...`);
+  perKey[k] = asModel(fit(cs, Float64Array.from(shared.w), 200, { w: Float64Array.from(shared.w), lambda: 0.01 }));
 }
-const learned = (n: number) => rhythmScore(model, Array.from(X.slice(n * F, n * F + F)));
-// the old rule: onset strength x metric weight
-const rule = (n: number) => {
-  const x = X.slice(n * F, n * F + F);
-  const metric = x[8] ? 1 : x[9] ? 0.8 : x[10] ? 0.6 : x[11] ? 0.4 : 0.3; // downbeat, beat, half, quarter
-  return x[6] * (0.5 + metric) + 1e-3 * metric;
-};
-console.log(`\n${N} ticks (${nTrain} train), positives ${(Y.reduce((s, y) => s + y, 0) / N * 100).toFixed(1)}%`);
-console.log(`held-out precision at the ranked note count: learned ${evalTop(true, learned).toFixed(3)}, old rule ${evalTop(true, rule).toFixed(3)}`);
-console.log('weights', RHYTHM_FEATURES.map((f, i) => `${f}:${model.w[i]}`).join(' '));
 
-writeFileSync(new URL('../../src/automap/rhythmmodel.ts', import.meta.url), `/**
+/** held-out precision at the ranked note count, averaged over maps (each map ranks its own ticks) */
+function precision(cs: Chunk[], model: (c: Chunk) => RhythmModel): number {
+  if (!cs.length) return NaN;
+  let sum = 0;
+  for (const c of cs) {
+    const m = model(c), n = c.y.length;
+    const scored: [number, number][] = [];
+    for (let k = 0; k < n; k++) scored.push([rhythmScore(m, Array.from(c.x.subarray(k * F, k * F + F))), c.y[k]]);
+    scored.sort((a, b) => b[0] - a[0]);
+    const pos = c.y.reduce((s, v) => s + v, 0);
+    let hit = 0;
+    for (let k = 0; k < pos; k++) hit += scored[k][1];
+    sum += hit / Math.max(1, pos);
+  }
+  return sum / cs.length;
+}
+const groups: [string, (c: Chunk) => boolean][] = [];
+for (const k of PER_KEY) for (const [lo, hi] of [[0, 4], [4, 6], [6, 8], [8, 99]]) groups.push([`${k}K ${lo}-${hi === 99 ? '' : hi}★`, (c) => c.keys === k && c.stars >= lo && c.stars < hi]);
+groups.push(['other keys', (c) => !PER_KEY.includes(c.keys)]);
+console.log('\nheld-out precision at the ranked note count (per map, mean)');
+console.log(`${'group'.padEnd(14)} maps   shipped   new shared   per key`);
+for (const [name, f] of groups) {
+  const cs = test.filter(f);
+  if (!cs.length) continue;
+  const k = cs[0].keys;
+  console.log(`${name.padEnd(14)} ${String(cs.length).padStart(4)}   ${precision(cs, () => RHYTHM_MODEL).toFixed(3)}     ${precision(cs, () => shared).toFixed(3)}        ${perKey[k] ? precision(cs, () => perKey[k]).toFixed(3) : '  -  '}`);
+}
+
+if (argv.includes('--write')) {
+  writeFileSync(new URL('../../src/automap/rhythmmodel.ts', import.meta.url), `/**
  * Learned rhythm model (logistic regression over grid ticks), trained by
- * scripts/bench/train-rhythm-model.ts on ${nTrain} ticks of ranked osu!mania maps.
+ * scripts/bench/train-rhythm-model.ts on ${nTrain} ticks of ranked osu!mania maps
+ * (${train.length} maps, beatmap set id % 3 != 0). RHYTHM_MODELS_BY_KEYS: per key count, started
+ * from the shared model and pulled towards it.
  */
 import type { RhythmModel } from './rhythm';
 
-export const RHYTHM_MODEL: RhythmModel = ${JSON.stringify(model)};
+export const RHYTHM_MODEL: RhythmModel = ${JSON.stringify(shared)};
+
+export const RHYTHM_MODELS_BY_KEYS: Record<number, RhythmModel> = ${JSON.stringify(perKey)};
 `);
-console.log('wrote src/automap/rhythmmodel.ts');
+  console.log('wrote src/automap/rhythmmodel.ts');
+}

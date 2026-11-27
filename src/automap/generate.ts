@@ -14,7 +14,7 @@ import { type Style, type StyleDef, STYLES, placeColumns, type PlannedRow } from
 import { songContext, measureFeatures, predictStyle } from './stylefeatures';
 import { STYLE_MODEL } from './stylemodel';
 import { gridTicksFor, gridDivisors, rhythmContext, tickFeatures, rhythmScore } from './rhythm';
-import { RHYTHM_MODEL } from './rhythmmodel';
+import { RHYTHM_MODEL, RHYTHM_MODELS_BY_KEYS } from './rhythmmodel';
 import { lnConvert } from '../tools/lnconvert';
 import { placeLongNotes } from './longnotes';
 import { energyCurve } from './energy';
@@ -465,11 +465,13 @@ export function learnedRhythm(a: Analysis, map: Beatmap, divisors: number | numb
   const first = onsets[0]?.time ?? 0, last = onsets[onsets.length - 1]?.time ?? end;
   const ticks = gridTicksFor(map, divs, Math.max(0, first - 100), Math.min(end, last + 100));
   const cur = { i: 0 };
+  // the key count's own model when there is one (mappers place notes differently in 4K and 7K)
+  const rhythmModel = RHYTHM_MODELS_BY_KEYS[getKeys(map)] ?? RHYTHM_MODEL;
   const env = contrast ? (contrastSourceFor(getKeys(map)) === 'energy' ? energyEnvelope(a, map, onsets) : loudnessEnvelope(a, windowMs)) : null;
   const scored = ticks.map((tk) => {
     const x = tickFeatures(ctx, map, tk, stars, cur, finest);
     const f = Math.max(0, Math.min(a.flux.length - 1, tk.frame));
-    const p0 = rhythmScore(RHYTHM_MODEL, x);
+    const p0 = rhythmScore(rhythmModel, x);
     // contrast: shift the tick's log-odds by the loudness of its surroundings
     const p = env ? 1 / (1 + Math.exp(-(Math.log(Math.max(1e-6, p0) / Math.max(1e-6, 1 - p0)) + contrast * env[f]))) : p0;
     // accent for chord sizes: the model's confidence mixed with the onset strength there
