@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-11-27
 
 ### Audio
 - More precise note timing: sound peaks are located between analysis frames. On 40 held-out ranked songs the timing error went from 3.7 to 2.8 ms.
