@@ -28,7 +28,10 @@ import { RHYTHM_MODEL } from '../../src/automap/rhythmmodel';
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const dirs = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && ['--cache', '--mlp'].includes(argv[i - 1])));
-const cacheDir = opt('cache');
+// --cache DIR[,DIR...]: all are read, new songs are written to the first (parallel extraction runs
+// each write their own and a training run reads them all)
+const cacheDirs = (opt('cache') ?? '').split(',').filter(Boolean);
+const cacheDir = cacheDirs[0];
 const F = RHYTHM_FEATURES.length;
 const PER_KEY = [4, 6, 7];
 const H = Number(opt('mlp') ?? 0);
@@ -44,13 +47,15 @@ interface Chunk { id: number; keys: number; stars: number; x: Float32Array; y: U
 const chunks: Chunk[] = [];
 const done = new Set<number>();
 // cache: index.jsonl (one line per map: id, keys, stars, ticks, byte offset) + x.f32 + y.u8
-if (cacheDir) {
-  mkdirSync(cacheDir, { recursive: true });
-  const idx = join(cacheDir, 'index.jsonl');
+if (cacheDir) mkdirSync(cacheDir, { recursive: true });
+for (const dir of cacheDirs) {
+  const idx = join(dir, 'index.jsonl');
+  const before = new Set(done); // a song extracted by two parallel runs counts once
   if (existsSync(idx)) {
-    const xb = readFileSync(join(cacheDir, 'x.f32')), yb = readFileSync(join(cacheDir, 'y.u8'));
+    const xb = readFileSync(join(dir, 'x.f32')), yb = readFileSync(join(dir, 'y.u8'));
     for (const line of readFileSync(idx, 'utf8').split('\n').filter(Boolean)) {
       const e = JSON.parse(line) as { id: number; keys: number; stars: number; n: number; off: number };
+      if (before.has(e.id)) continue;
       done.add(e.id);
       if (e.n === 0) continue;
       chunks.push({ id: e.id, keys: e.keys, stars: e.stars,
@@ -59,7 +64,7 @@ if (cacheDir) {
     }
   }
 }
-let offset = chunks.reduce((s, c) => s + c.y.length, 0);
+let offset = cacheDir && existsSync(join(cacheDir, 'y.u8')) ? statSync(join(cacheDir, 'y.u8')).size : 0;
 const before = done.size;
 for (const dir of dirs) for (const set of readdirSync(dir).sort()) {
   const id = Number(set.split(' ')[0]);

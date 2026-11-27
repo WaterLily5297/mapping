@@ -15,6 +15,8 @@ export const RHYTHM_FEATURES = [
   'flux', 'low', 'mid', 'high', 'salience', 'loudness', 'onsetStrength', 'onset',
   'downbeat', 'beat', 'half', 'quarter', 'eighth', 'triplet', 'other',
   'stars', 'bpm', 'starsXhalf', 'starsXquarter', 'starsXeighth', 'starsXtriplet', 'stepMs', 'bias',
+  // context: the sounds around the tick (after bias, so a model trained before them gives them no weight)
+  'osPrev', 'osNext', 'osShareOfBeat', 'onsetsNearby', 'loudVsBeats',
 ] as const;
 
 /**
@@ -98,6 +100,7 @@ export function tickFeatures(ctx: RhythmContext, map: Beatmap, tk: Tick, stars: 
   let os = 0;
   for (let j = cursor.i; j < ctx.onsets.length && ctx.onsets[j].time <= tk.t + 35; j++) os = Math.max(os, ctx.onsets[j].strength);
   const beat = redLineAt(map, tk.t)?.beatLength ?? 500;
+  const step = beat / finest;
   const pos = positionOf(tk.beatFrac);
   const downbeat = pos === 'beat' && tk.beatIndex % 4 === 0 ? 1 : 0;
   const onBeat = pos === 'beat' && !downbeat ? 1 : 0;
@@ -107,11 +110,39 @@ export function tickFeatures(ctx: RhythmContext, map: Beatmap, tk: Tick, stars: 
     flux, mx(a.bands[0], 2), mx(a.bands[1], 2), mx(a.bands[2], 2), salience, loud, os, os > 0 ? 1 : 0,
     downbeat, onBeat, is('half'), is('quarter'), is('eighth'), is('triplet'), is('other'),
     s, 60000 / beat / 200 - 1, s * is('half'), s * is('quarter'), s * is('eighth'), s * is('triplet'), beat / finest / 100, 1,
+    // context
+    strongestOnset(ctx, tk.t - step - 35, tk.t - step + 35), strongestOnset(ctx, tk.t + step - 35, tk.t + step + 35),
+    os / Math.max(0.05, strongestOnset(ctx, tk.t - beat / 2, tk.t + beat / 2)),
+    onsetCount(ctx, tk.t - beat, tk.t + beat) / 8,
+    loudVs(a, f, Math.round(beat * 4 / 1000 / a.frameDur)),
   ];
 }
 
+/** first onset index at or after time t (onsets are in time order) */
+function onsetIndex(ctx: RhythmContext, t: number): number {
+  let lo = 0, hi = ctx.onsets.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (ctx.onsets[mid].time < t) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+function strongestOnset(ctx: RhythmContext, t0: number, t1: number): number {
+  let m = 0;
+  for (let j = onsetIndex(ctx, t0); j < ctx.onsets.length && ctx.onsets[j].time <= t1; j++) m = Math.max(m, ctx.onsets[j].strength);
+  return m;
+}
+function onsetCount(ctx: RhythmContext, t0: number, t1: number): number {
+  return onsetIndex(ctx, t1 + 1e-6) - onsetIndex(ctx, t0);
+}
+/** loudness at frame f against the mean of +-r frames (0 = as loud as its surroundings) */
+function loudVs(a: Analysis, f: number, r: number): number {
+  let sum = 0, n = 0;
+  for (let j = Math.max(0, f - r); j <= Math.min(a.rms.length - 1, f + r); j += 2) { sum += a.rms[j]; n++; }
+  const here = a.rms[Math.max(0, Math.min(a.rms.length - 1, f))] ?? 0;
+  return here / Math.max(1e-6, sum / Math.max(1, n)) - 1;
+}
+
 export function rhythmScore(m: RhythmModel, x: ArrayLike<number>): number {
-  const n = x.length, zs = new Float64Array(n);
+  // a model trained on fewer features (before the context ones were added) uses only its own
+  const n = Math.min(x.length, m.mean.length), zs = new Float64Array(n);
   let z = 0;
   for (let i = 0; i < n; i++) { zs[i] = m.std[i] > 0 ? (x[i] - m.mean[i]) / m.std[i] : x[i]; z += (m.w[i] ?? 0) * zs[i]; }
   const h = m.mlp;
