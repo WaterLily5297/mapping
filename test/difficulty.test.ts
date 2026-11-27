@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { createBeatmap, makeNote, parseOsu, type Beatmap } from '../src/core/beatmap';
 import { starRating, crossWeights, crossWeightsRule } from '../src/analysis/difficulty';
 import { fitDifficulty, rebirthToOfficial, officialToRebirth } from '../src/tools/difficultyfit';
-import { generateForStars } from '../src/automap/target';
+import { generateForStars, generateBestOf } from '../src/automap/target';
+import { chartQuality } from '../src/automap/quality';
 import { analyze } from '../src/automap/analysis';
 import { dirt, validate } from '../src/tools/transforms';
 import { rng } from '../src/core/rng';
@@ -131,5 +132,13 @@ describe('generate for a target star rating', () => {
     const lo = generateForStars(a, { keys: 4, targetStars: 1.5, seed: 3 }).stars;
     const hi = generateForStars(a, { keys: 4, targetStars: 3, seed: 3 }).stars;
     expect(hi).toBeGreaterThan(lo + 1);
+  });
+
+  it('best of several candidates scores at least as well as the first one', () => {
+    const one = generateForStars(a, { keys: 7, targetStars: 2.5, seed: 3 });
+    const best = generateBestOf(a, { keys: 7, targetStars: 2.5, seed: 3 }, 3);
+    expect(best.candidates).toBe(3);
+    expect(best.quality).toBeGreaterThanOrEqual(chartQuality(one.map, a, 2.5).total - 1e-9);
+    expect(dirt(best.map).fastJacks).toBe(0);
   });
 });

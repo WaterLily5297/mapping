@@ -13,6 +13,8 @@ import { type AutoMapOptions, type Difficulty, generateFromAnalysis, songStylePr
 import { STYLE_MODEL } from './stylemodel';
 import { starRating } from '../analysis/difficulty';
 import { fitDifficulty } from '../tools/difficultyfit';
+import { chartQuality } from './quality';
+import { detectOnsets } from './analysis';
 
 const TIERS: Difficulty[] = ['easy', 'normal', 'hard', 'insane', 'expert'];
 
@@ -116,4 +118,29 @@ export function generateForStars(
     if (Math.abs(again.stars - target) < Math.abs(stars - target)) return { ...again, tries: again.tries + tries };
   }
   return { map, stars, target, reached: Math.abs(stars - target) <= tol, difficulty: best.difficulty, density: best.density, intensity: best.intensity, tries };
+}
+
+/**
+ * Quick rules candidates kept by best-of-N: each seed places the same rhythm in other patterns.
+ * On held-out songs (scripts/bench/qr-rerank.ts, 6 seeds, picked by chartQuality) the kept chart
+ * had 6-14% less dirt for 6K and 7K (7K 6+ stars 151 -> 142 per 1000 notes) and half the star
+ * error (7K 0.029 -> 0.015), at the same rhythm F1 and pattern mix.
+ */
+export const QR_CANDIDATES = 6;
+
+/** generateForStars for N seeds (opts.seed, +1, ...), keeping the chart with the best quality score */
+export function generateBestOf(
+  a: Analysis,
+  opts: AutoMapOptions & { targetStars: number; tolerance?: number; fit?: boolean },
+  n = QR_CANDIDATES,
+): TargetResult & { quality: number; candidates: number } {
+  const onsets = detectOnsets(a, 0.6);
+  const base = opts.seed ?? 7;
+  let best: (TargetResult & { quality: number }) | null = null;
+  for (let k = 0; k < Math.max(1, n); k++) {
+    const r = generateForStars(a, { ...opts, seed: base + k * 7919 });
+    const q = chartQuality(r.map, a, opts.targetStars, { onsets }).total;
+    if (!best || q > best.quality) best = { ...r, quality: q };
+  }
+  return { ...best!, candidates: Math.max(1, n) };
 }

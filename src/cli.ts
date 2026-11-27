@@ -15,7 +15,7 @@ import { parseOsu, writeOsu, getKeys, osuFileName, type Beatmap } from './core/b
 import * as T from './tools/transforms';
 import { classifyPatterns, PATTERN_INFO, summarize, describeTags, type PatternType } from './analysis/patterns';
 import { generateFromAnalysis, resolveDirection, loudnessForMap, type Difficulty, STYLES, type StyleChoice } from './automap/generate';
-import { generateForStars } from './automap/target';
+import { generateForStars, generateBestOf, QR_CANDIDATES } from './automap/target';
 import { starRating } from './analysis/difficulty';
 import { fitDifficulty, rebirthToOfficial, officialToRebirth } from './tools/difficultyfit';
 import { analyze, analyzeStereo, estimateTempo, stereoWidth } from './automap/analysis';
@@ -1086,7 +1086,8 @@ async function main() {
         const dir = resolveDirection(an, direction);
         console.log(`sound direction: ${dir}${an.pan ? ` (stereo width ${stereoWidth(an).toFixed(2)})` : ' (mono)'}`);
         console.log(`searching for ${targetStars} stars...`);
-        const r = generateForStars(an, { ...genOpts, difficulty: a.difficulty ? diff : undefined, targetStars, tolerance: num(a, 'tolerance', 0.1) });
+        // best of several seeds by the quality score (--candidates N; 1 = one seed)
+        const r = generateBestOf(an, { ...genOpts, difficulty: a.difficulty ? diff : undefined, targetStars, tolerance: num(a, 'tolerance', 0.1) }, num(a, 'candidates', QR_CANDIDATES));
         map = r.map;
         if (!a.difficulty) map.metadata.set('Version', `${keys}K ${r.stars.toFixed(1)}* (auto)`);
         console.log(`got ${r.stars.toFixed(2)} stars (${r.difficulty}, density ${r.density.toFixed(2)}${r.intensity > 1 ? `, intensity ${r.intensity.toFixed(2)}` : ''}; ${r.tries} tries)`);
