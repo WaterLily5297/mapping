@@ -13,6 +13,8 @@ import { type AutoMapOptions, type Difficulty, generateFromAnalysis, songStylePr
 import { STYLE_MODEL } from './stylemodel';
 import { starRating } from '../analysis/difficulty';
 import { fitDifficulty } from '../tools/difficultyfit';
+import { chartQuality } from './quality';
+import { detectOnsets } from './analysis';
 
 const TIERS: Difficulty[] = ['easy', 'normal', 'hard', 'insane', 'expert'];
 
@@ -116,4 +118,32 @@ export function generateForStars(
     if (Math.abs(again.stars - target) < Math.abs(stars - target)) return { ...again, tries: again.tries + tries };
   }
   return { map, stars, target, reached: Math.abs(stars - target) <= tol, difficulty: best.difficulty, density: best.density, intensity: best.intensity, tries };
+}
+
+/**
+ * Quick rules candidates kept by best-of-N: each seed places the same rhythm in other patterns.
+ * On 10 held-out songs per group (scripts/bench/qr-rerank.ts, picked by chartQuality), rhythm F1 and
+ * pattern mix were the same for any N; star error per candidate count 1 / 3 / 6:
+ *   7K 0.029 / 0.018 / 0.015, 6K 0.023 / 0.011 / 0.014, 4K 0.074 / 0.053 / 0.049;
+ * dirt 7K 103 / 101 / 96, 7K 6+ stars 151 / 146 / 142, 6K 49 / 49 / 43, 4K no change (ranked maps on
+ * the same songs: 7K 129, 7K 6+ 182, 6K 60, 4K 228, so lower is not always closer to ranked).
+ * Each candidate costs a full generation (about 4 s for a 3-minute song), so 3 by default.
+ */
+export const QR_CANDIDATES = 3;
+
+/** generateForStars for N seeds (opts.seed, +1, ...), keeping the chart with the best quality score */
+export function generateBestOf(
+  a: Analysis,
+  opts: AutoMapOptions & { targetStars: number; tolerance?: number; fit?: boolean },
+  n = QR_CANDIDATES,
+): TargetResult & { quality: number; candidates: number } {
+  const onsets = detectOnsets(a, 0.6);
+  const base = opts.seed ?? 7;
+  let best: (TargetResult & { quality: number }) | null = null;
+  for (let k = 0; k < Math.max(1, n); k++) {
+    const r = generateForStars(a, { ...opts, seed: base + k * 7919 });
+    const q = chartQuality(r.map, a, opts.targetStars, { onsets }).total;
+    if (!best || q > best.quality) best = { ...r, quality: q };
+  }
+  return { ...best!, candidates: Math.max(1, n) };
 }

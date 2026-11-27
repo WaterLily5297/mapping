@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import { createBeatmap, makeNote, parseOsu, type Beatmap } from '../src/core/beatmap';
 import { starRating, crossWeights, crossWeightsRule } from '../src/analysis/difficulty';
 import { fitDifficulty, rebirthToOfficial, officialToRebirth } from '../src/tools/difficultyfit';
-import { generateForStars } from '../src/automap/target';
+import { generateForStars, generateBestOf } from '../src/automap/target';
+import { chartQuality } from '../src/automap/quality';
+import { aiBestOf, SEED_STEP } from '../src/ai/bestof';
+import { writeOsu } from '../src/core/beatmap';
 import { analyze } from '../src/automap/analysis';
 import { dirt, validate } from '../src/tools/transforms';
 import { rng } from '../src/core/rng';
@@ -131,5 +134,33 @@ describe('generate for a target star rating', () => {
     const lo = generateForStars(a, { keys: 4, targetStars: 1.5, seed: 3 }).stars;
     const hi = generateForStars(a, { keys: 4, targetStars: 3, seed: 3 }).stars;
     expect(hi).toBeGreaterThan(lo + 1);
+  });
+
+  it('best of several candidates scores at least as well as the first one', () => {
+    const one = generateForStars(a, { keys: 7, targetStars: 2.5, seed: 3 });
+    const best = generateBestOf(a, { keys: 7, targetStars: 2.5, seed: 3 }, 3);
+    expect(best.candidates).toBe(3);
+    expect(best.quality).toBeGreaterThanOrEqual(chartQuality(one.map, a, 2.5).total - 1e-9);
+    expect(dirt(best.map).fastJacks).toBe(0);
+  });
+
+  it('AI best of N runs each seed once and keeps the best-scoring chart', async () => {
+    // stand-in for the model: a Quick rules chart per seed, one deliberately off target
+    const seeds: number[] = [];
+    const start = (o: { seed?: number }) => {
+      seeds.push(o.seed!);
+      const stars = seeds.length === 2 ? 2.5 : 1.2;
+      return { done: Promise.resolve({ osuText: writeOsu(generateForStars(a, { keys: 7, targetStars: stars, seed: o.seed }).map), log: [] }) };
+    };
+    const r = await aiBestOf(3, { audioPath: 'x', keys: 7, seed: 5 }, 2.5, { start, post: (t) => ({ map: parseOsu(t) }), analyze: () => a });
+    expect(seeds).toEqual([5, 5 + SEED_STEP, 5 + 2 * SEED_STEP]);
+    expect(r.scores).toHaveLength(3);
+    expect(r.picked).toBe(r.scores.indexOf(Math.max(...r.scores)));
+    expect(r.picked).toBe(1);
+    // without an analysis there is nothing to score: one run
+    seeds.length = 0;
+    const one = await aiBestOf(3, { audioPath: 'x', keys: 7, seed: 5 }, 2.5, { start, post: (t) => ({ map: parseOsu(t) }), analyze: () => undefined });
+    expect(seeds).toEqual([5]);
+    expect(one.scores).toEqual([]);
   });
 });

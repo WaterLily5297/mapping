@@ -517,6 +517,8 @@ export function initStudio(deps: StudioDeps) {
         // hold-note ratio the model is asked for: rice maps are mostly 0-10% LN
         ln: req.style === 'ln' ? 0.5 : 0.05, sv: 0, tags, cfg: tags.length ? 1.5 : 1, seed: req.seed, mapperId,
         model: $<HTMLSelectElement>('st-model').value,
+        // best of N: the model runs N times and the server keeps the chart with the best quality score
+        candidates: mug ? 1 : Number($<HTMLSelectElement>('st-candidates').value) || 1,
         // the best setup for these keys (per-key defaults), e.g. a 7K LoRA when it is installed
         lora: mug ? undefined : 'default',
         ...(mug ? { engine: 'mug', style: req.style, bpm: req.bpm, offset: req.offset, steps: 50 } : {}),
@@ -537,7 +539,7 @@ export function initStudio(deps: StudioDeps) {
       const rep = await call<{ report: Report }>({ type: 'report', osu: writeOsu(m) });
       const secs = Math.round((performance.now() - t0) / 1000);
       const lora = mug ? undefined : defaultLora(req.keys, installedLoras);
-      const engine = mug ? `AI · MuG Diffusion v1 (4K, non-commercial) · ${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, '0')}s` : `AI · Mapperatorinator ${$<HTMLSelectElement>('st-model').value === 'v32-mini' ? 'V32-mini' : 'V32'} mania model${lora ? ` + LoRA ${lora}` : ''}${mapperId ? ` · style of ${mapperName(mapperId)}` : ''} · ${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, '0')}s`;
+      const engine = mug ? `AI · MuG Diffusion v1 (4K, non-commercial) · ${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, '0')}s` : `AI · Mapperatorinator ${$<HTMLSelectElement>('st-model').value === 'v32-mini' ? 'V32-mini' : 'V32'} mania model${lora ? ` + LoRA ${lora}` : ''}${mapperId ? ` · style of ${mapperName(mapperId)}` : ''}${s.candidates ? ` · best of ${s.candidates.scores.length}` : ''} · ${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, '0')}s`;
       return { report: rep.report, req, reached: Math.abs(rep.report.stars - req.stars) <= 0.15, notes: m.notes, engine, ai: true };
     }
   };

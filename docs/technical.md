@@ -271,8 +271,18 @@ So the 7K default (`src/ai/defaults.ts`) is **plain V32, without a reference map
 
 The adapter is trained on ranked beatmaps, so it is for personal use only, like the maps themselves. Train your own copy with `maniamap lora-dataset` on 7K maps and `maniamap lora-train ... --name mania-7k`, or install a copy you have with `maniamap lora-import mania-7k-lora.zip --name mania-7k`.
 
-### Development
+**Best of N.** The same song gives quite different AI charts with different seeds, most of all in 4K. On 6 hard held-out 4K songs (5★+, 30-second sections, 3 seeds), the same section differed by 0.08 in rhythm F1 and 0.32 in skill-mix distance between its best and worst seed. One song went from F1 0.69 / skill-mix 0.81 with one seed to 0.98 / 0.02 with another. *Best of N* (`--candidates N`) runs the model N times with seeds 7919 apart and keeps the chart with the best quality score (`src/automap/quality.ts`). That score uses only what is known at generation time: star accuracy, rows on detected sounds, density against the music-energy curve, loud measures filled, cleanliness. Held-out results, measured on the charts as delivered, after the star adjustment (`scripts/bench/seed-rerank.ts --fit`):
 
+| rhythm F1 / skill-mix distance / fast jacks | one seed | best of N by the score | best possible pick (best skill mix) |
+|---|---|---|---|
+| 4K 5★+, N = 3 | 0.933 / 0.459 / 89 | **0.948 / 0.328** / 91 | 0.960 / 0.305 / 81 |
+| 6K 6–7★, N = 3 (4 songs) | 0.910 / 0.165 / 10.7 | **0.918 / 0.152** / 19.5 | 0.922 / 0.129 / 21.4 |
+| 7K 6★+, N = 4 | 0.914 / 0.167 / 14.4 | 0.911 / 0.163 / **11.7** | 0.917 / 0.141 / 11.3 |
+| 7K 2.3–4.3★, N = 3 | 0.912 / 0.307 / 0 | **0.920** / 0.307 / 0 | 0.905 / 0.247 / 0 |
+
+The score finds most of what there is to gain in 4K, where seeds differ most, and a smaller part in 6K and 7K. On the same sections the ranked maps have 119 fast jacks (4K), 13 (6K), 2.8 (hard 7K) and 0 (mid 7K): in hard 6K the kept charts have more fast jacks than the ranked maps (only 4 held-out songs, so a tendency at most). It is off by default because each candidate is a full AI run.
+
+### Development
 
 ```bash
 npm install

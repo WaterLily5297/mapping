@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0 — 2026-11-27
+
+### Audio
+- More precise note timing: sound peaks are located between analysis frames. On 40 held-out ranked songs the timing error went from 3.7 to 2.8 ms.
+- **Music energy curve** (the song's intensity / emotion per measure), learned from 451 ranked 4K/6K/7K maps: loudness, onset rate and strength, spectral flux, bass/mid/treble, brightness, noisiness, and the change against the previous and next measures. It follows where ranked maps get dense better than loudness alone: 7K 0.63 → 0.69, 6K 0.63 → 0.66, 4K 0.55 → 0.65, 6+★ 0.70 → 0.75 (held-out correlation).
+- 6K and 7K charts follow the energy curve (7K density shape 0.51 → 0.55 against ranked maps, 7K 6+★ 0.61 → 0.65); 4K keeps loudness, where the curve did not help the generated charts.
+
+### Generate
+- Quick rules makes several charts and keeps the best one by a quality score (star accuracy, notes on sounds, density following the energy curve, loud measures filled, cleanliness): about half the star error. `--candidates N` (default 3).
+- **AI: Best of N** (Generate → Best of, or `maniamap ai --candidates N`): the model runs N times and the chart with the best quality score is kept. The AI's charts differ a lot between seeds, most of all in 4K: on hard held-out 4K songs best of 3 moved the pattern mix much closer to the ranked map (distance 0.46 → 0.33) and improved rhythm (F1 0.933 → 0.948); on hard 7K it cut fast jacks (14.4 → 11.7), on mid 7K it improved rhythm a little (0.912 → 0.920); on hard 6K rhythm and pattern mix improved but the kept charts had more fast jacks (4 test songs). Measured on the delivered charts, after the star adjustment. N times slower, so it is off by default.
+
 ## 1.0.0 — 2026-11-26
 
 The first release: an osu!mania map generator and editor for any key count (1K–18K) that runs on your computer.

@@ -4,7 +4,7 @@
  * reports run here so the page stays smooth.
  */
 import { analyze, analyzeStereo, estimateTempo, stereoWidth, type Analysis } from '../automap/analysis';
-import { generateForStars } from '../automap/target';
+import { generateBestOf } from '../automap/target';
 import { detectTiming, toTimingPoints, TEMPO_CHANGES } from '../automap/tempomap';
 import { type StyleChoice, loudnessForMap } from '../automap/generate';
 import { parseOsu, type TimingPoint } from '../core/beatmap';
@@ -51,7 +51,8 @@ self.onmessage = (e: MessageEvent<WorkerIn>) => {
     } else if (m.type === 'generate') {
       if (!analysis) throw new Error('load a song first');
       const r = m.req;
-      const res = generateForStars(analysis, {
+      // best of several seeds by the quality score (cleaner, closer to the star target)
+      const res = generateBestOf(analysis, {
         keys: r.keys, targetStars: r.stars, style: r.style, bpm: r.bpm, offset: r.offset, seed: r.seed,
         lnRatio: r.lnRatio, pitchFollow: r.pitchFollow, direction: r.direction, metadata: r.metadata, timingPoints: r.timing,
       });

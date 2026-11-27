@@ -223,6 +223,13 @@ export interface Onset {
   frame: number;
 }
 
+/**
+ * Sub-frame onset times (parabolic interpolation of the flux peak). On 40 held-out ranked songs
+ * (audio-bench --heldout-id): onset timing error 3.74 -> 2.84 ms, onset F1 0.781 -> 0.784.
+ */
+export let ONSET_INTERP = true;
+export function _setOnsetInterp(on: boolean) { ONSET_INTERP = on; }
+
 /** Peak-pick the onset envelope with an adaptive (moving average) threshold. */
 export function detectOnsets(a: Analysis, sensitivity = 0.5): Onset[] {
   const f = a.flux;
@@ -248,7 +255,13 @@ export function detectOnsets(a: Analysis, sensitivity = 0.5): Onset[] {
     if (v < mean + delta) continue;
     if (i - last < minGap) continue;
     last = i;
-    out.push({ time: (i * a.frameDur + ONSET_LATENCY(a)) * 1000, strength: v, centroid: a.centroid[i], frame: i });
+    // sub-frame peak position: a parabola through the peak and its neighbours (frames are ~10 ms)
+    let frac = 0;
+    if (ONSET_INTERP && i > 0 && i + 1 < f.length) {
+      const l = f[i - 1], r = f[i + 1], den = l - 2 * v + r;
+      if (den < 0) frac = Math.max(-0.5, Math.min(0.5, (0.5 * (l - r)) / den));
+    }
+    out.push({ time: ((i + frac) * a.frameDur + ONSET_LATENCY(a)) * 1000, strength: v, centroid: a.centroid[i], frame: i });
   }
   return out;
 }
