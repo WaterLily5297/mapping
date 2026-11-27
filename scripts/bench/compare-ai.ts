@@ -39,6 +39,8 @@ const lora = opt('lora', '');
 const model = opt('model', '');
 // --lookback X: Mapperatorinator's lookback fraction (default: whatever the CLI uses)
 const lookback = opt('lookback', ''), lookahead = opt('lookahead', '');
+// --seed N: sampling seed of the AI (default 7); several seeds measure how much quality varies
+const seed = opt('seed', '7');
 
 function decode(path: string): Float32Array {
   const r = spawnSync('ffmpeg', ['-v', 'error', '-i', path, '-ac', '1', '-ar', '22050', '-f', 'f32le', '-'], { maxBuffer: 1 << 30 });
@@ -118,7 +120,7 @@ for (const [idx, set] of sets.entries()) {
       // without --mapper/--lora the CLI would apply its per-key defaults; a benchmark run states both
       '--mapper', useMapper ? String(pickMapper(dir, keysWanted, target)) : 'none',
       '--lora', lora || 'none',
-      '--model', model || 'v32', ...(lookback ? ['--lookback', lookback] : []), ...(lookahead ? ['--lookahead', lookahead] : []), '--ln', '0', '--seed', '7', '--device', 'cpu', '-o', aiOut], { encoding: 'utf8', maxBuffer: 1 << 28 });
+      '--model', model || 'v32', ...(lookback ? ['--lookback', lookback] : []), ...(lookahead ? ['--lookahead', lookahead] : []), '--ln', '0', '--seed', seed, '--device', 'cpu', '-o', aiOut], { encoding: 'utf8', maxBuffer: 1 << 28 });
     if (r.status !== 0) console.log(`AI failed on ${set}: ${(r.stderr || r.stdout).split('\n').slice(-4).join(' ')}`);
   }
   const aiSeconds = (Date.now() - t0) / 1000;

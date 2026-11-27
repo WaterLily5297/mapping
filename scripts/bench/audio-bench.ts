@@ -16,14 +16,16 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseOsu, getKeys, type Beatmap } from '../../src/core/beatmap';
 import { redLines } from '../../src/core/timing';
-import { analyze, detectOnsets, estimateTempo, estimateTempoHeuristic, beatPhase, ONSET_LATENCY, MAP_LEAD_MS, type Analysis } from '../../src/automap/analysis';
+import { analyze, detectOnsets, estimateTempo, _setOnsetInterp, estimateTempoHeuristic, beatPhase, ONSET_LATENCY, MAP_LEAD_MS, type Analysis } from '../../src/automap/analysis';
 import { starRating } from '../../src/analysis/difficulty';
 
 const argv = process.argv.slice(2);
-const dirs = argv.filter((x, i) => !x.startsWith('--') && !(i > 0 && ['--songs', '--keys'].includes(argv[i - 1])));
+const dirs = argv.filter((x, i) => !x.startsWith('--') && !(i > 0 && ['--songs', '--keys', '--interp'].includes(argv[i - 1])));
 const opt = (k: string, d: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
 // --train / --heldout: only songs with index % 3 != 0 / == 0 in each folder (calibrate on one, check on the other)
 const split = argv.includes('--train') ? 'train' : argv.includes('--heldout') ? 'heldout' : '';
+// --interp on|off: sub-frame onset interpolation
+if (argv.includes('--interp')) _setOnsetInterp(opt('interp', 'on') === 'on');
 const nSongs = Number(opt('songs', '60')), keysOk = opt('keys', '4,7').split(',').map(Number);
 
 function decode(path: string): Float32Array {
@@ -48,7 +50,7 @@ export function onsetsNear(a: Analysis, want: number): number[] {
   return best;
 }
 
-const songs: { set: string; bpmRef: number; bpmGot: number; kind: string; offErr: number; offSigned: number; onsetBias: number; codec: string; p: number; r: number; strongR: number }[] = [];
+const songs: { set: string; bpmRef: number; bpmGot: number; kind: string; offErr: number; offSigned: number; onsetBias: number; timingErr: number; codec: string; p: number; r: number; strongR: number }[] = [];
 outer: for (const dataDir of dirs) {
   for (const [idx, set] of readdirSync(dataDir).sort().entries()) {
     if (songs.length >= nSongs) break outer;
@@ -95,7 +97,10 @@ outer: for (const dataDir of dirs) {
       const c = [rows[lo - 1], rows[lo]].filter((y) => y !== undefined).sort((u, v) => Math.abs(u - x) - Math.abs(v - x))[0]; if (c !== undefined && Math.abs(x - c) <= 60) ds.push(x - c); }
     ds.sort((x, y) => x - y);
     const onsetBias = ds[Math.floor(ds.length / 2)] ?? NaN;
-    songs.push({ set, bpmRef, bpmGot: t.bpm, kind, offErr, offSigned, onsetBias, codec: audio.split('.').pop()!, p: hit / Math.max(1, on.length), r: hit / Math.max(1, rows.length), strongR: sh / Math.max(1, strong.length) });
+    // timing precision: absolute error of onsets within 25 ms of a mapped row, after this song's bias
+    const absErr = ds.filter((d) => Math.abs(d) <= 25).map((d) => Math.abs(d - onsetBias)).sort((x, y) => x - y);
+    const timingErr = absErr[Math.floor(absErr.length / 2)] ?? NaN;
+    songs.push({ set, bpmRef, bpmGot: t.bpm, kind, offErr, offSigned, onsetBias, timingErr, codec: audio.split('.').pop()!, p: hit / Math.max(1, on.length), r: hit / Math.max(1, rows.length), strongR: sh / Math.max(1, strong.length) });
     const s = songs[songs.length - 1];
     console.log(`${set.slice(0, 34).padEnd(34)} bpm ${s.bpmRef.toFixed(1).padStart(6)} got ${s.bpmGot.toFixed(1).padStart(6)} ${s.kind.padEnd(6)} ${Number.isNaN(offSigned) ? '         ' : `off ${offSigned.toFixed(0).padStart(4)}ms`} onset bias ${onsetBias.toFixed(0).padStart(4)}ms  onsets P ${s.p.toFixed(2)} R ${s.r.toFixed(2)} strongR ${s.strongR.toFixed(2)}`);
   }
@@ -112,4 +117,5 @@ for (const codec of [...new Set(songs.map((s) => s.codec))]) {
   console.log(`${codec}: ${c.length} songs, median signed offset ${med(c.map((s) => s.offSigned)).toFixed(1)} ms (+ = detected later), median onset bias ${med(c.map((s) => s.onsetBias)).toFixed(1)} ms`);
 }
 const P = mean((s) => s.p), R = mean((s) => s.r);
+console.log(`onset timing error (median, after each song's bias): ${med(songs.map((s) => s.timingErr)).toFixed(2)} ms`);
 console.log(`onsets vs mapped rows: precision ${P.toFixed(3)} recall ${R.toFixed(3)} F1 ${(2 * P * R / (P + R)).toFixed(3)}; strong-beat rows found ${mean((s) => s.strongR).toFixed(3)}`);
