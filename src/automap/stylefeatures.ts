@@ -67,11 +67,20 @@ export interface StyleModel {
   weights: number[][];
   mean: number[];
   std: number[];
+  /** optional hidden layer: ReLU units over the standardised features, their output added to the
+   *  linear logits (W2[class][unit]) */
+  mlp?: { h: number; W1: number[]; b1: number[]; W2: number[][]; b2: number[] };
 }
 
 export function predictStyle(model: StyleModel, x: number[]): number[] {
   const z = x.map((v, i) => (model.std[i] > 0 ? (v - model.mean[i]) / model.std[i] : v));
   const logits = model.weights.map((w) => w.reduce((s, wi, i) => s + wi * z[i], 0));
+  const h = model.mlp;
+  if (h) {
+    const n = z.length, act = new Array(h.h).fill(0);
+    for (let j = 0; j < h.h; j++) { let a = h.b1[j]; for (let i = 0; i < n; i++) a += h.W1[j * n + i] * z[i]; act[j] = a > 0 ? a : 0; }
+    for (let c = 0; c < logits.length; c++) { let v = h.b2[c]; for (let j = 0; j < h.h; j++) v += h.W2[c][j] * act[j]; logits[c] += v; }
+  }
   const m = Math.max(...logits);
   const e = logits.map((l) => Math.exp(l - m));
   const sum = e.reduce((a, b) => a + b, 0);

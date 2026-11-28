@@ -22,7 +22,8 @@ import { STYLE_MODEL } from '../../src/automap/stylemodel';
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
-const dirs = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i - 1] === '--cache'));
+const dirs = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && ['--cache', '--mlp'].includes(argv[i - 1])));
+const H = Number(opt('mlp') ?? 0);
 // --cache a.json[,b.json...]: all are read, new songs are written to the first
 const caches = (opt('cache') ?? '').split(',').filter(Boolean);
 const cacheFile = caches[0];
@@ -139,6 +140,55 @@ for (let epoch = 0; epoch < 400; epoch++) {
   for (let c = 0; c < C; c++) for (let i = 0; i < F; i++) W[c][i] -= lr * (G[c][i] / Z.length + l2 * W[c][i]);
 }
 const model: StyleModel = { classes: [...CLASSES], weights: W.map((w) => w.map((v) => +v.toFixed(4))), mean: mean.map((v) => +v.toFixed(4)), std: std.map((v) => +v.toFixed(4)) };
+
+// optional hidden layer on top of the linear logits (Adam, class-weighted, minibatches)
+if (H > 0) {
+  const P = H * F + H + C * H + C;
+  const th = new Float64Array(P), m1 = new Float64Array(P), m2 = new Float64Array(P);
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) >>> 0; return seed / 2 ** 32; };
+  for (let j = 0; j < H * F; j++) th[j] = (Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd())) * Math.sqrt(2 / F);
+  const lin = Z.map((x) => model.weights.map((w) => w.reduce((s, wi, i) => s + wi * x[i], 0)));
+  const order = Z.map((_, i) => i);
+  const act = new Float64Array(H), g = new Float64Array(P);
+  let step = 0;
+  for (let e = 0; e < 8; e++) {
+    for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+    let loss = 0;
+    for (let b0 = 0; b0 < order.length; b0 += 256) {
+      g.fill(0);
+      const b1 = Math.min(order.length, b0 + 256);
+      for (let q = b0; q < b1; q++) {
+        const n = order[q], x = Z[n], y = train[n].y, w = cw[y];
+        for (let j = 0; j < H; j++) { let a = th[H * F + j]; for (let i = 0; i < F; i++) a += th[j * F + i] * x[i]; act[j] = a > 0 ? a : 0; }
+        const lg = lin[n].map((v, c) => { let t = v + th[H * F + H + C * H + c]; for (let j = 0; j < H; j++) t += th[H * F + H + c * H + j] * act[j]; return t; });
+        const mx = Math.max(...lg), ex = lg.map((l) => Math.exp(l - mx)), sm = ex.reduce((a, b) => a + b, 0);
+        loss -= w * Math.log(ex[y] / sm + 1e-12);
+        for (let c = 0; c < C; c++) {
+          const d = (ex[c] / sm - (c === y ? 1 : 0)) * w;
+          g[H * F + H + C * H + c] += d;
+          for (let j = 0; j < H; j++) {
+            if (!act[j]) continue;
+            g[H * F + H + c * H + j] += d * act[j];
+            const dj = d * th[H * F + H + c * H + j];
+            g[H * F + j] += dj;
+            for (let i = 0; i < F; i++) g[j * F + i] += dj * x[i];
+          }
+        }
+      }
+      step++;
+      for (let k = 0; k < P; k++) {
+        const gk = g[k] / (b1 - b0) + 1e-5 * th[k];
+        m1[k] = 0.9 * m1[k] + 0.1 * gk; m2[k] = 0.999 * m2[k] + 0.001 * gk * gk;
+        th[k] -= 1e-3 * (m1[k] / (1 - 0.9 ** step)) / (Math.sqrt(m2[k] / (1 - 0.999 ** step)) + 1e-8);
+      }
+    }
+    console.log(`  hidden layer epoch ${e + 1}: weighted log-loss ${(loss / order.length).toFixed(4)}`);
+  }
+  const r = (v: ArrayLike<number>) => Array.from(v, (x) => +x.toFixed(4));
+  model.mlp = { h: H, W1: r(th.subarray(0, H * F)), b1: r(th.subarray(H * F, H * F + H)),
+    W2: Array.from({ length: C }, (_, c) => r(th.subarray(H * F + H + c * H, H * F + H + (c + 1) * H))), b2: r(th.subarray(H * F + H + C * H, P)) };
+}
 
 const evalSet = (set: Sample[]) => {
   let ok = 0;
