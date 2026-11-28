@@ -16,6 +16,7 @@
  *               within 8 beats, as in human maps (pattern consistency)
  * Lower is better except rhythmF1 and repeat (closer to the ranked value is better).
  * --min-stars X benchmarks each song's hardest difficulty instead (songs with one of X stars or more).
+ * --ln X sets the long-note ratio (the app's default is 0.25; 0 if not given).
  * --contrast X sets the loudness contrast strength (see scripts/bench/contour.ts).
  */
 import { readdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
@@ -154,7 +155,7 @@ for (const [setIdx, set] of sets.entries()) {
   const a = analyze(decode(join(dir, audio), 22050), 22050);
   const red = redLines(ref)[0];
   const r = generateForStars(a, {
-    keys: getKeys(ref), targetStars: target, bpm: 60000 / red.beatLength, offset: red.time, seed: 7, lnRatio: 0,
+    keys: getKeys(ref), targetStars: target, bpm: 60000 / red.beatLength, offset: red.time, seed: 7, lnRatio: Number(opt('ln') ?? 0),
     ...(style === 'oracle' ? { style: oracleStyle(ref) } : style ? { style: style as never } : {}),
     ...(argv.includes('--coarse') ? { fineGrid: false } : argv.includes('--fine') ? { fineGrid: true } : {}),
     // --contrast X: loudness contrast strength (default: defaultContrast(stars))
