@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.0 — 2026-11-28
+
+### Generate
+- **4K pattern choice retrained** on about 3,000 ranked songs: auto style picks streams, jumpstream and chordjack closer to the ranked maps. Measured at the app's defaults on held-out songs: pattern-mix distance 0.447 → 0.432 around 5★ and 0.555 → 0.497 around 7★, where rhythm match also rose (0.706 → 0.725). 6K and 7K keep their previous model, which the retrained one did not beat.
+- **7K chord sizes like ranked maps**: auto style sizes each chord through the chord-size mix ranked 7K maps use at that star rating (learned from about 2,000 training songs), instead of a fixed curve that made too many single notes and too many 5–6 note chords. On held-out 7K songs the chord-size distance to the ranked maps fell from 0.244 to 0.155 at 6★+ (54 songs better, 6 worse) and from 0.224 to 0.161 around 6★, with rhythm match 0.804 → 0.809 and pattern mix 0.274 → 0.253 at 6★+, and less dirt. 4K and 6K were not better with it and are unchanged.
+
+### Benchmarks
+- The generator benchmark now measures what the app makes by default: auto style (`--style auto`) and the default long-note amount (`--ln 0.25`). With them, the long-note share of generated charts matches ranked rice maps (4K 0.09 vs 0.10, 6K 0.13 vs 0.14, 7K 0.13 vs 0.15).
+- Checked and left as they were: the long-note default (0.25), the speed-or-chordjack decision at 6★+ (agrees with the ranked map on 70% of 4K and 92–99% of 7K songs), and 4K speed mode's jack limit.
+
 ## 1.2.0 — 2026-11-28
 
 ### Generate

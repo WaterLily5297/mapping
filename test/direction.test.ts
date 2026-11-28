@@ -101,3 +101,22 @@ describe('contrast source per key count', () => {
     expect(contrastSourceFor(7)).toBe('energy');
   });
 });
+
+import { chordTarget, chordSizeAt } from '../src/automap/chordtargets';
+describe('ranked chord-size targets', () => {
+  it('maps a strength percentile through the distribution', () => {
+    const d = [0.5, 0.3, 0.2];
+    expect(chordSizeAt(d, 0)).toBe(1);
+    expect(chordSizeAt(d, 0.49)).toBe(1);
+    expect(chordSizeAt(d, 0.5)).toBe(2);
+    expect(chordSizeAt(d, 0.85)).toBe(3);
+    expect(chordSizeAt(d, 1)).toBe(3);
+  });
+  it('has 7K data from 4 stars up, harder maps using more big chords', () => {
+    const mid = chordTarget(7, 4.5)!, hard = chordTarget(7, 8.5)!;
+    expect(mid).toHaveLength(7);
+    expect(Math.abs(mid.reduce((a, b) => a + b, 0) - 1)).toBeLessThan(0.01);
+    expect(hard[0]).toBeLessThan(mid[0]);
+    expect(chordTarget(5, 6)).toBeNull();
+  });
+});

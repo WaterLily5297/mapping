@@ -16,6 +16,7 @@
  *               within 8 beats, as in human maps (pattern consistency)
  * Lower is better except rhythmF1 and repeat (closer to the ranked value is better).
  * --min-stars X benchmarks each song's hardest difficulty instead (songs with one of X stars or more).
+ * --ln X sets the long-note ratio (the app's default is 0.25; 0 if not given).
  * --contrast X sets the loudness contrast strength (see scripts/bench/contour.ts).
  */
 import { readdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
@@ -25,7 +26,7 @@ import { parseOsu, getKeys, isLN, type Beatmap } from '../../src/core/beatmap';
 import { redLines } from '../../src/core/timing';
 import { analyze } from '../../src/automap/analysis';
 import { generateForStars } from '../../src/automap/target';
-import { _setContrastSource } from '../../src/automap/generate';
+import { _setContrastSource, _setMinijackStarsLowKeys, _setChordTargets } from '../../src/automap/generate';
 import { starRating } from '../../src/analysis/difficulty';
 import { classifyPatterns } from '../../src/analysis/patterns';
 import { dirt } from '../../src/tools/cleanliness';
@@ -35,6 +36,8 @@ const dataDir = argv[0];
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 // --contrast-source energy|loudness
 if (opt('contrast-source')) _setContrastSource(opt('contrast-source') as 'auto' | 'energy' | 'loudness');
+if (opt('minijack-stars')) _setMinijackStarsLowKeys(Number(opt('minijack-stars')));
+if (argv.includes('--no-chord-targets')) _setChordTargets(false);
 const max = Number(opt('max') ?? 40);
 const keysFilter = (opt('keys') ?? '4,7').split(',').map(Number);
 const style = opt('style');
@@ -154,7 +157,7 @@ for (const [setIdx, set] of sets.entries()) {
   const a = analyze(decode(join(dir, audio), 22050), 22050);
   const red = redLines(ref)[0];
   const r = generateForStars(a, {
-    keys: getKeys(ref), targetStars: target, bpm: 60000 / red.beatLength, offset: red.time, seed: 7, lnRatio: 0,
+    keys: getKeys(ref), targetStars: target, bpm: 60000 / red.beatLength, offset: red.time, seed: 7, lnRatio: Number(opt('ln') ?? 0),
     ...(style === 'oracle' ? { style: oracleStyle(ref) } : style ? { style: style as never } : {}),
     ...(argv.includes('--coarse') ? { fineGrid: false } : argv.includes('--fine') ? { fineGrid: true } : {}),
     // --contrast X: loudness contrast strength (default: defaultContrast(stars))

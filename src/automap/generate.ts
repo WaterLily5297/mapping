@@ -12,9 +12,10 @@ import { snapTime, redLineAt } from '../core/timing';
 import { rng } from '../core/rng';
 import { type Style, type StyleDef, STYLES, placeColumns, type PlannedRow } from './patternize';
 import { songContext, measureFeatures, predictStyle } from './stylefeatures';
-import { STYLE_MODEL } from './stylemodel';
+import { STYLE_MODEL, styleModelFor } from './stylemodel';
 import { gridTicksFor, gridDivisors, rhythmContext, tickFeatures, rhythmScore } from './rhythm';
 import { RHYTHM_MODEL, RHYTHM_MODELS_BY_KEYS } from './rhythmmodel';
+import { chordTarget, chordSizeAt } from './chordtargets';
 import { lnConvert } from '../tools/lnconvert';
 import { placeLongNotes } from './longnotes';
 import { energyCurve } from './energy';
@@ -226,6 +227,10 @@ export function generateFromAnalysis(a: Analysis, opts: AutoMapOptions): Beatmap
   };
 
   // ---- chord sizes per row (the rhythm plan)
+  // auto style in 7K sizes chords through the ranked maps' chord-size distribution at these stars:
+  // on held-out songs chord-size distance 0.244 -> 0.155 at 6+ stars (54 songs better, 6 worse),
+  // with rhythm F1 and pattern mix a little better and less dirt; 4K and 6K were not better.
+  const chordDist = auto && CHORD_TARGETS_ON && CHORD_TARGET_KEYS.includes(keys) ? chordTarget(keys, opts.targetStars ?? TIER_STARS[diff]) : null;
   const plan: PlannedRow[] = [];
   let prevTime = -Infinity;
   for (const g of grid) {
@@ -238,7 +243,11 @@ export function generateFromAnalysis(a: Analysis, opts: AutoMapOptions): Beatmap
     const jumpChance = Math.max(style.fastChords, cx);
     const p = pct(g.strength * (0.6 + 0.4 * metricWeight(g)));
     let chordSize = 1;
-    if (maxChord > 1) {
+    if (maxChord > 1 && chordDist) {
+      chordSize = chordSizeAt(chordDist, p);
+      if (style.chordScale > 1 && chordSize > 1 && rand() < style.chordScale - 1) chordSize++;
+      chordSize = Math.min(maxChord, chordSize);
+    } else if (maxChord > 1) {
       // top percentiles get bigger chords; downbeats get a bonus
       chordSize = 1 + Math.floor(Math.pow(p, 2.2 - 1.2 * cx) * maxChord * (g.beatFrac === 0 ? 1 : 0.6) * Math.min(1, style.chordScale));
       if (style.chordScale > 1 && chordSize > 1 && rand() < style.chordScale - 1) chordSize++;
@@ -268,7 +277,7 @@ export function generateFromAnalysis(a: Analysis, opts: AutoMapOptions): Beatmap
   }
 
   // ---- column assignment: the pattern engine
-  const jackLimit = opts.minJackGap ?? ((opts.speedBias ?? 0) > 0 && (opts.targetStars ?? 0) >= 7.5
+  const jackLimit = opts.minJackGap ?? ((opts.speedBias ?? 0) > 0 && (opts.targetStars ?? 0) >= (keys <= 5 ? MINIJACK_STARS_LOW_KEYS : 7.5)
     ? Math.max(beatLen / 4 - 3, 60)
     : Math.max(beatLen * P.minJackGapBeats - 3, beatLen / 2 - 3, beatLen / 4 + 3, 91));
   const placed = placeColumns(plan, {
@@ -496,12 +505,23 @@ export function songStyleProbs(a: Analysis, keys: number, stars: number, bpm?: n
   const sum = new Array(STYLE_MODEL.classes.length).fill(0);
   for (let m = 0; m < n; m++) {
     const t0 = start + m * beatLen * 4;
-    predictStyle(STYLE_MODEL, measureFeatures(ctx, t0, t0 + beatLen * 4, 4, tempo.bpm, stars, keys)).forEach((v, i) => { sum[i] += v / n; });
+    predictStyle(styleModelFor(keys), measureFeatures(ctx, t0, t0 + beatLen * 4, 4, tempo.bpm, stars, keys)).forEach((v, i) => { sum[i] += v / n; });
   }
   return sum;
 }
 
 /** Learned style per measure (4 beats), smoothed over neighbours so sections stay coherent. */
+/** auto style sizes chords through the ranked distribution (chordtargets.ts) */
+let CHORD_TARGETS_ON = true;
+const CHORD_TARGET_KEYS = [7];
+/** benchmarks only */
+export function _setChordTargets(on: boolean) { CHORD_TARGETS_ON = on; }
+
+/** from this target, speed mode in 4K/5K may use 1/4-beat minijacks (6K and up: 7.5) */
+let MINIJACK_STARS_LOW_KEYS = 7.5;
+/** benchmarks only */
+export function _setMinijackStarsLowKeys(v: number) { MINIJACK_STARS_LOW_KEYS = v; }
+
 export function autoStyles(a: Analysis, offset: number, beatLen: number, keys: number, stars: number, jackBias: number, durationMs: number, speedBias = 0): StyleDef[] {
   const ctx = songContext(a, detectOnsets(a, 0.5));
   const bpm = 60000 / beatLen;
@@ -509,7 +529,7 @@ export function autoStyles(a: Analysis, offset: number, beatLen: number, keys: n
   const probs: number[][] = [];
   for (let m = 0; m < n; m++) {
     const t0 = offset + m * beatLen * 4;
-    probs.push(predictStyle(STYLE_MODEL, measureFeatures(ctx, t0, t0 + beatLen * 4, 4, bpm, stars, keys)));
+    probs.push(predictStyle(styleModelFor(keys), measureFeatures(ctx, t0, t0 + beatLen * 4, 4, bpm, stars, keys)));
   }
   const cj = STYLE_MODEL.classes.indexOf('chordjack');
   const js = STYLE_MODEL.classes.indexOf('jumpstream');

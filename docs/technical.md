@@ -117,7 +117,20 @@ Generated charts are built in patterns, the way mappers think, not note by note.
 | 6K ~7★, 7 | 0.764 → **0.775** | 5 / 2 | 0.201 → 0.213 | 121 → 122 (146) |
 | 7K ~8★, 60 | 0.769 → **0.771** | 39 / 21 | 0.258 → 0.256 | 106 → 113 (151) |
 
-Quick rules does not reach hard 4K targets: on those 60 songs (~7★) the charts end 1.4★ under on average, with a pattern mix far from the ranked maps; use the AI engine for 4K at high stars.
+Those runs used the balanced style without long notes. *1.3:* at the app's defaults (auto style, long notes 0.25), hard 4K does reach its targets (0.07★ off); its weak point was pattern choice, with too much chordjack where ranked maps stream. The style model, retrained on 205,000 measures from about 3,000 songs (split by set id), is now used for 4K (`STYLE_MODELS_BY_KEYS` in `src/automap/stylemodel.ts`); 6K and 7K keep the previous one, which it did not beat. At the app's defaults on held-out songs:
+
+| Held-out songs, app defaults | Star error | Rhythm F1 | Skill-mix distance | Dirt (ranked maps) |
+|---|---|---|---|---|
+| 4K ~5★, 60 | 0.025 | 0.775 | 0.447 → **0.432** | 136 (166) |
+| 6K ~4★, 26 | 0.028 | 0.765 | 0.323 | 44 (90) |
+| 7K ~6★, 60 | 0.030 | 0.816 | 0.271 | 75 (106) |
+| 4K ~7★, 60 | 0.067 | 0.706 → **0.725** | 0.555 → **0.497** | 261 (301) |
+| 6K ~7★, 7 | 0.027 | 0.777 | 0.276 | 121 (146) |
+| 7K ~8★, 60 | 0.042 | 0.804 | 0.274 | 129 (151) |
+
+**7K chord sizes.** The generator sized chords with a fixed curve over each row's strength, which gave 7K charts too many single notes and too many 5–6 note chords (6★+ training songs: 49% singles and 5% six-note chords, against 31% and 0.5% in the ranked maps), where ranked mappers use 2–4 note chords. Auto style in 7K now ranks the rows by strength and sizes them so that the song's mix follows the ranked 7K maps at that star range (`src/automap/chordtargets.ts`, built by `scripts/bench/chord-targets.ts` from training songs). On held-out songs, chord-size distance 0.224 → 0.161 around 6★ (45 better / 15 worse) and 0.244 → 0.155 at 6★+ (54 / 6), rhythm F1 0.816 → 0.817 and 0.804 → 0.809, pattern mix 0.271 → 0.276 and 0.274 → 0.253, dirt 75 → 73 and 129 → 101 (ranked 106 and 151). In 4K and 6K it was slightly worse, so they keep the curve.
+
+Tried without a held-out gain, so not used: more chords in 4K speed mode, 1/4-beat minijacks from 6★ in 4K speed mode (`generator-bench --minijack-stars`; better on training songs only), and a 6K long-note default of 0.1 (better rhythm, worse pattern mix).
 
 On songs neither model saw (every third song held out), from the balanced style with onset rhythm to auto style with learned rhythm:
 
