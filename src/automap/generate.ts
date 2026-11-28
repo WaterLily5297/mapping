@@ -268,7 +268,7 @@ export function generateFromAnalysis(a: Analysis, opts: AutoMapOptions): Beatmap
   }
 
   // ---- column assignment: the pattern engine
-  const jackLimit = opts.minJackGap ?? ((opts.speedBias ?? 0) > 0 && (opts.targetStars ?? 0) >= 7.5
+  const jackLimit = opts.minJackGap ?? ((opts.speedBias ?? 0) > 0 && (opts.targetStars ?? 0) >= (keys <= 5 ? MINIJACK_STARS_LOW_KEYS : 7.5)
     ? Math.max(beatLen / 4 - 3, 60)
     : Math.max(beatLen * P.minJackGapBeats - 3, beatLen / 2 - 3, beatLen / 4 + 3, 91));
   const placed = placeColumns(plan, {
@@ -502,6 +502,11 @@ export function songStyleProbs(a: Analysis, keys: number, stars: number, bpm?: n
 }
 
 /** Learned style per measure (4 beats), smoothed over neighbours so sections stay coherent. */
+/** from this target, speed mode in 4K/5K may use 1/4-beat minijacks (6K and up: 7.5) */
+let MINIJACK_STARS_LOW_KEYS = 7.5;
+/** benchmarks only */
+export function _setMinijackStarsLowKeys(v: number) { MINIJACK_STARS_LOW_KEYS = v; }
+
 export function autoStyles(a: Analysis, offset: number, beatLen: number, keys: number, stars: number, jackBias: number, durationMs: number, speedBias = 0): StyleDef[] {
   const ctx = songContext(a, detectOnsets(a, 0.5));
   const bpm = 60000 / beatLen;
