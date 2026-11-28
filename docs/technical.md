@@ -106,6 +106,19 @@ Generated charts are built in patterns, the way mappers think, not note by note.
 
 **Learned rhythm.** Where notes go matters most. `src/automap/rhythmmodel.ts` scores every tick of the beat grid with how likely a mapper is to put a note there (logistic regression over flux, band energy, onset salience, loudness, a detected onset, the tick's place in the measure, tempo and the star target), trained by `scripts/bench/train-rhythm-model.ts` on 1.25 million ticks of ranked maps (including about 390 maps of 6–11★). The generator keeps the most likely ticks, as many as the density asks for; above the densest preset, the star search takes the model's next most likely ticks. On held-out songs it picks the ranked map's ticks 84% of the time at the ranked note count, against 60% for the old "loudest onsets on strong beats" rule. The grid also adapts to the tempo: it is never finer than 60 ms (a 284 BPM song gets 1/2, not 1/4).
 
+*1.2:* the rhythm model now also sees the sounds around each tick (onset strength one grid step before and after, the tick's share of the strongest onset in its beat, onsets within a beat, loudness against the surrounding four beats) and has 32 hidden units on top of the linear part. It was trained on 5.4 million ticks from 1,672 ranked maps (1,097 songs; about 2,500 more songs were fetched for this). Retraining the linear model on the larger data alone changed nothing (held-out precision 0.845 → 0.848); the hidden layer and context are what use it: **0.862** on 781 held-out 4K/6K/7K maps, better in every key count and star range with a usable sample (7K 4–6★ 0.850 → 0.875, 6–8★ 0.833 → 0.847, 8★+ 0.855 → 0.862; 4K 4–6★ 0.847 → 0.867; 6K 4–6★ 0.855 → 0.874). Separate models per key count added nothing on top. In the generator, on the larger held-out set (927 songs, set id % 3 == 0):
+
+| Held-out songs | Rhythm F1 (old → new) | songs better / worse | Skill-mix distance | Dirt (ranked maps) |
+|---|---|---|---|---|
+| 4K ~5★, 60 | 0.789 → **0.792** | 26 / 8 | 0.507 → 0.509 | 99 → 103 (166) |
+| 6K ~4★, 26 | 0.785 → **0.795** | 15 / 4 | 0.390 → **0.371** | 89 → 90 (90) |
+| 7K ~6★, 60 | 0.785 → **0.790** | 32 / 19 | 0.307 → 0.315 | 89 → 93 (106) |
+| 4K ~7★, 60 | 0.767 → 0.767 | 10 / 12 | 0.654 → 0.653 | 106 → 109 (301) |
+| 6K ~7★, 7 | 0.764 → **0.775** | 5 / 2 | 0.201 → 0.213 | 121 → 122 (146) |
+| 7K ~8★, 60 | 0.769 → **0.771** | 39 / 21 | 0.258 → 0.256 | 106 → 113 (151) |
+
+Quick rules does not reach hard 4K targets: on those 60 songs (~7★) the charts end 1.4★ under on average, with a pattern mix far from the ranked maps; use the AI engine for 4K at high stars.
+
 On songs neither model saw (every third song held out), from the balanced style with onset rhythm to auto style with learned rhythm:
 
 | Held-out songs | Star error | Rhythm F1 | Skill-mix distance | Dirt (ranked maps) |
