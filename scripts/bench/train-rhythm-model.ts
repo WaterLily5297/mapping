@@ -271,17 +271,22 @@ for (const [name, f] of groups) {
 }
 
 if (argv.includes('--write')) {
+  // with --mlp: the shared model with its hidden layer (fine-tuning per key count added nothing on
+  // held-out maps); without: the linear shared and per-key models
+  const best = mlpShared ?? shared, byKeys = mlpShared ? {} : perKey;
+  const overall = (m: (c: Chunk) => RhythmModel) => precision(test.filter((c) => PER_KEY.includes(c.keys)), m).toFixed(3);
   writeFileSync(new URL('../../src/automap/rhythmmodel.ts', import.meta.url), `/**
- * Learned rhythm model (logistic regression over grid ticks), trained by
- * scripts/bench/train-rhythm-model.ts on ${nTrain} ticks of ranked osu!mania maps
- * (${train.length} maps, beatmap set id % 3 != 0). RHYTHM_MODELS_BY_KEYS: per key count, started
- * from the shared model and pulled towards it.
+ * Learned rhythm model, trained by scripts/bench/train-rhythm-model.ts${H ? ` --mlp ${H}` : ''} on ${nTrain} ticks
+ * of ranked osu!mania maps (${train.length} maps from ${new Set(train.map((c) => c.id)).size} songs, beatmap set id % 3 != 0):
+ * logistic regression over tickFeatures()${H ? ` with ${H} hidden units on its log-odds` : ''}. Held-out precision
+ * at the ranked note count on ${test.filter((c) => PER_KEY.includes(c.keys)).length} 4K/6K/7K maps: ${overall(() => best)} (the model before
+ * this one: ${overall(() => RHYTHM_MODEL)}).
  */
 import type { RhythmModel } from './rhythm';
 
-export const RHYTHM_MODEL: RhythmModel = ${JSON.stringify(shared)};
+export const RHYTHM_MODEL: RhythmModel = ${JSON.stringify(best)};
 
-export const RHYTHM_MODELS_BY_KEYS: Record<number, RhythmModel> = ${JSON.stringify(perKey)};
+export const RHYTHM_MODELS_BY_KEYS: Record<number, RhythmModel> = ${JSON.stringify(byKeys)};
 `);
   console.log('wrote src/automap/rhythmmodel.ts');
 }
