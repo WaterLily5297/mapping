@@ -218,7 +218,7 @@ console.log('test confusion (rows = ranked map, cols = predicted):');
 console.log('            ' + CLASSES.map((c) => c.slice(0, 7).padStart(8)).join(''));
 te.conf.forEach((r, i) => console.log(CLASSES[i].padEnd(12) + r.map((v) => String(v).padStart(8)).join('')));
 
-if (argv.includes('--write')) writeFileSync(new URL('../../src/automap/stylemodel.ts', import.meta.url), `/**
+if (argv.includes('--write')) writeFileSync(new URL('../../src/automap/stylemodel.new.ts', import.meta.url), `/**
  * Learned auto-style model (multinomial logistic regression), trained by
  * scripts/bench/train-style-model.ts on ${train.length} measures of ranked osu!mania maps.
  * Held-out accuracy ${te.acc.toFixed(3)} (majority baseline ${base.toFixed(3)}).
@@ -227,4 +227,4 @@ import type { StyleModel } from './stylefeatures';
 
 export const STYLE_MODEL: StyleModel = ${JSON.stringify(model)};
 `);
-if (argv.includes('--write')) console.log('wrote src/automap/stylemodel.ts');
+if (argv.includes('--write')) console.log('wrote src/automap/stylemodel.new.ts (stylemodel.ts picks a model per key count: copy it in by hand)');

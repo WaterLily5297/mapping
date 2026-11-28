@@ -12,7 +12,7 @@ import { snapTime, redLineAt } from '../core/timing';
 import { rng } from '../core/rng';
 import { type Style, type StyleDef, STYLES, placeColumns, type PlannedRow } from './patternize';
 import { songContext, measureFeatures, predictStyle } from './stylefeatures';
-import { STYLE_MODEL } from './stylemodel';
+import { STYLE_MODEL, styleModelFor } from './stylemodel';
 import { gridTicksFor, gridDivisors, rhythmContext, tickFeatures, rhythmScore } from './rhythm';
 import { RHYTHM_MODEL, RHYTHM_MODELS_BY_KEYS } from './rhythmmodel';
 import { lnConvert } from '../tools/lnconvert';
@@ -496,7 +496,7 @@ export function songStyleProbs(a: Analysis, keys: number, stars: number, bpm?: n
   const sum = new Array(STYLE_MODEL.classes.length).fill(0);
   for (let m = 0; m < n; m++) {
     const t0 = start + m * beatLen * 4;
-    predictStyle(STYLE_MODEL, measureFeatures(ctx, t0, t0 + beatLen * 4, 4, tempo.bpm, stars, keys)).forEach((v, i) => { sum[i] += v / n; });
+    predictStyle(styleModelFor(keys), measureFeatures(ctx, t0, t0 + beatLen * 4, 4, tempo.bpm, stars, keys)).forEach((v, i) => { sum[i] += v / n; });
   }
   return sum;
 }
@@ -509,7 +509,7 @@ export function autoStyles(a: Analysis, offset: number, beatLen: number, keys: n
   const probs: number[][] = [];
   for (let m = 0; m < n; m++) {
     const t0 = offset + m * beatLen * 4;
-    probs.push(predictStyle(STYLE_MODEL, measureFeatures(ctx, t0, t0 + beatLen * 4, 4, bpm, stars, keys)));
+    probs.push(predictStyle(styleModelFor(keys), measureFeatures(ctx, t0, t0 + beatLen * 4, 4, bpm, stars, keys)));
   }
   const cj = STYLE_MODEL.classes.indexOf('chordjack');
   const js = STYLE_MODEL.classes.indexOf('jumpstream');
