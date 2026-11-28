@@ -3,7 +3,7 @@
  * Pure (no Node APIs), so the CLI, the editor server and the browser can all use it.
  */
 import { type Beatmap, parseOsu, getKeys, setKeys } from '../core/beatmap';
-import { fixOverlaps, validate } from '../tools/transforms';
+import { fixOverlaps, validate, breakFastJacks } from '../tools/transforms';
 import { classifyPatterns } from '../analysis/patterns';
 
 export interface AiPostOptions {
@@ -39,6 +39,10 @@ export function postprocessAiMap(osuText: string, o: AiPostOptions): AiPostResul
   // a long note snapped to zero (or negative) length is a plain note
   for (const n of map.notes) if (n.endTime !== undefined && n.endTime <= n.time) delete n.endTime;
   map = fixOverlaps(map);
+  // 7K: fast jacks inside streams (rows of 1-2 notes) move to a free column; jacked chords stay.
+  // On 24 held-out hard 7K AI sections: 14.4 -> 11.0 fast jacks per 1000 notes (ranked 2.8), same
+  // pattern mix. In 4K and 6K the AI has fewer fast jacks than ranked maps, so they are left alone.
+  if (o.keys === 7 && o.engine !== 'mug') map = breakFastJacks(map, { maxRowSize: 2 }).map;
   const md = map.metadata;
   if (o.title) { md.set('Title', o.title); md.set('TitleUnicode', o.title); }
   if (o.artist) { md.set('Artist', o.artist); md.set('ArtistUnicode', o.artist); }

@@ -4,6 +4,7 @@
 
 ### Generate
 - **6K long notes: fewer, longer holds.** At the same Long notes setting, 6K places about 40% as many long notes and lets them hold a little longer, the way ranked 6K rice maps use them; the many short holds before made the star search drop rows. On held-out 6K songs the rhythm match rose from 0.765 to 0.779 (20 songs better, 6 worse) at about the same pattern mix (14 better, 11 worse). 4K and 7K are unchanged.
+- **Cleaner 7K AI charts**: fast jacks inside streams (rows of one or two notes) move to a free column; jacked chords, which are chordjack, stay. On held-out hard 7K AI sections, fast jacks fell from 14.4 to 11.0 per 1000 notes (ranked maps 2.8) at the same pattern mix and rhythm. 4K and 6K AI charts already have fewer fast jacks than ranked maps and are left as they are.
 
 ## 1.3.0 — 2026-11-28
 
