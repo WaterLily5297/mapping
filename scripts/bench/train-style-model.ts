@@ -2,12 +2,14 @@
  * Train the auto-style model: per measure, audio features + target stars -> the pattern style the
  * ranked map uses there. Writes src/automap/stylemodel.ts.
  *
- *   npx tsx scripts/bench/train-style-model.ts DATA_DIR [DATA_DIR...] [--holdout 3] [--cache f.json]
+ *   npx tsx scripts/bench/train-style-model.ts DATA_DIR [DATA_DIR...] [--cache f.json] [--write]
  *
- * Songs whose index (in sorted folder order, per data dir) is divisible by --holdout are left out
- * for testing (the benchmark's --holdout uses the same rule).
+ * Split by beatmap set id (% 3 == 0 held out), each song once even when it sits in several data
+ * folders. --cache keeps the extracted measures (incremental: cached songs are not analysed again).
+ * Reports held-out accuracy per key count and star range for the shipped and the new model;
+ * --write writes src/automap/stylemodel.ts.
  */
-import { readdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, writeFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseOsu, getKeys, isLN, type Beatmap } from '../../src/core/beatmap';
@@ -16,12 +18,14 @@ import { analyze, detectOnsets } from '../../src/automap/analysis';
 import { starRating } from '../../src/analysis/difficulty';
 import { classifyPatterns, type PatternType } from '../../src/analysis/patterns';
 import { STYLE_CLASSES, FEATURE_NAMES, songContext, measureFeatures, predictStyle, type StyleModel } from '../../src/automap/stylefeatures';
+import { STYLE_MODEL } from '../../src/automap/stylemodel';
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
-const dirs = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i - 1].startsWith('--')));
-const holdout = Number(opt('holdout') ?? 3);
-const cacheFile = opt('cache');
+const dirs = argv.filter((a, i) => !a.startsWith('--') && !(i > 0 && argv[i - 1] === '--cache'));
+// --cache a.json[,b.json...]: all are read, new songs are written to the first
+const caches = (opt('cache') ?? '').split(',').filter(Boolean);
+const cacheFile = caches[0];
 
 export function styleOfPattern(p: PatternType): number {
   switch (p) {
@@ -40,57 +44,65 @@ function decode(path: string): Float32Array {
   return new Float32Array(b.buffer, b.byteOffset, Math.floor(b.byteLength / 4)).slice();
 }
 
-interface Sample { x: number[]; y: number; song: string; test: boolean }
+interface Sample { x: number[]; y: number; id: number; keys: number; stars: number; test: boolean }
 
 let samples: Sample[] = [];
-if (cacheFile && existsSync(cacheFile)) samples = JSON.parse(readFileSync(cacheFile, 'utf8'));
-else {
-  for (const dir of dirs) {
-    const sets = readdirSync(dir).sort();
-    sets.forEach((set, idx) => {
-      const p = join(dir, set);
-      let files: string[];
-      try { files = readdirSync(p); } catch { return; }
-      const audio = files.find((f) => /^audio\./.test(f));
-      if (!audio) return;
-      const maps: Beatmap[] = [];
-      for (const f of files.filter((x) => x.endsWith('.osu'))) {
-        try {
-          const m = parseOsu(readFileSync(join(p, f), 'utf8'));
-          if (redLines(m).length === 1 && getKeys(m) >= 4 && getKeys(m) <= 10 && m.notes.length > 100) maps.push(m);
-        } catch { /* skip */ }
-      }
-      if (!maps.length) return;
-      const a = analyze(decode(join(p, audio)), 22050);
-      const ctx = songContext(a, detectOnsets(a, 0.5));
-      for (const m of maps) {
-        const red = redLines(m)[0];
-        const beat = red.beatLength, bpm = 60000 / beat;
-        const stars = starRating(m).stars;
-        const pr = classifyPatterns(m);
-        const lnShare = m.notes.filter(isLN).length / m.notes.length;
-        if (lnShare > 0.2) continue; // LN maps are a choice of the mapper, not of the music
-        // per measure: majority style of its rows
-        const byMeasure = new Map<number, number[]>();
-        pr.rows.forEach((r, i) => {
-          const k = Math.floor((r.time - red.time) / (beat * 4) + 1e-6);
-          const arr = byMeasure.get(k) ?? new Array(STYLE_CLASSES.length).fill(0);
-          arr[lnShare > 0.35 ? 5 : styleOfPattern(pr.labels[i])]++;
-          byMeasure.set(k, arr);
-        });
-        for (const [k, counts] of byMeasure) {
-          const total = counts.reduce((x, y) => x + y, 0);
-          if (total < 4) continue;
-          const y = counts.indexOf(Math.max(...counts));
-          const t0 = red.time + k * beat * 4;
-          samples.push({ x: measureFeatures(ctx, t0, t0 + beat * 4, 4, bpm, stars, getKeys(m)), y, song: set, test: idx % holdout === 0 });
-        }
-      }
-      console.log(`${samples.length} samples  ${set.slice(0, 50)}`);
-    });
-  }
-  if (cacheFile) writeFileSync(cacheFile, JSON.stringify(samples));
+const done = new Set<number>();
+for (const c of caches) {
+  if (!existsSync(c)) continue;
+  const seen = new Set(done); // a song extracted by two parallel runs counts once
+  for (const s of JSON.parse(readFileSync(c, 'utf8')) as Sample[]) if (!seen.has(s.id)) { samples.push(s); done.add(s.id); }
 }
+const own = cacheFile && existsSync(cacheFile) ? (JSON.parse(readFileSync(cacheFile, 'utf8')) as Sample[]) : [];
+const fresh: Sample[] = [];
+let added = 0;
+for (const dir of dirs) {
+  for (const set of readdirSync(dir).sort()) {
+    const id = Number(set.split(' ')[0]);
+    if (!Number.isFinite(id) || done.has(id)) continue;
+    done.add(id);
+    const p = join(dir, set);
+    let files: string[];
+    try { if (!statSync(p).isDirectory()) continue; files = readdirSync(p); } catch { continue; }
+    const audio = files.find((f) => /^audio\./.test(f));
+    if (!audio) continue;
+    const maps: Beatmap[] = [];
+    for (const f of files.filter((x) => x.endsWith('.osu'))) {
+      try {
+        const m = parseOsu(readFileSync(join(p, f), 'utf8'));
+        if (redLines(m).length === 1 && getKeys(m) >= 4 && getKeys(m) <= 10 && m.notes.length > 100 && m.notes.filter(isLN).length / m.notes.length <= 0.2) maps.push(m);
+      } catch { /* skip */ }
+    }
+    if (!maps.length) continue;
+    let a;
+    try { a = analyze(decode(join(p, audio)), 22050); } catch { continue; }
+    const ctx = songContext(a, detectOnsets(a, 0.5));
+    for (const m of maps) {
+      const red = redLines(m)[0];
+      const beat = red.beatLength, bpm = 60000 / beat;
+      const stars = starRating(m).stars;
+      const pr = classifyPatterns(m);
+      // per measure: majority style of its rows
+      const byMeasure = new Map<number, number[]>();
+      pr.rows.forEach((r, i) => {
+        const k = Math.floor((r.time - red.time) / (beat * 4) + 1e-6);
+        const arr = byMeasure.get(k) ?? new Array(STYLE_CLASSES.length).fill(0);
+        arr[styleOfPattern(pr.labels[i])]++;
+        byMeasure.set(k, arr);
+      });
+      for (const [k, counts] of byMeasure) {
+        const total = counts.reduce((x, y) => x + y, 0);
+        if (total < 4) continue;
+        const y = counts.indexOf(Math.max(...counts));
+        const t0 = red.time + k * beat * 4;
+        fresh.push({ x: measureFeatures(ctx, t0, t0 + beat * 4, 4, bpm, stars, getKeys(m)).map((v) => +v.toFixed(5)), y, id, keys: getKeys(m), stars: +stars.toFixed(2), test: id % 3 === 0 });
+      }
+    }
+    if (++added % 50 === 0) console.log(`${done.size} songs, ${samples.length + fresh.length} measures`);
+  }
+}
+samples.push(...fresh);
+if (cacheFile && added) writeFileSync(cacheFile, JSON.stringify([...own, ...fresh]));
 
 // rice styles only: balanced (slow), stream, jumpstream, chordjack; tech is too rare in ranked maps
 const CLASSES = ['balanced', 'stream', 'jumpstream', 'chordjack'] as const;
@@ -139,6 +151,14 @@ const evalSet = (set: Sample[]) => {
   }
   return { acc: ok / Math.max(1, set.length), conf };
 };
+const accOf = (set: Sample[], m: StyleModel) => set.length ? set.filter((s) => { const p = predictStyle(m, s.x); return p.indexOf(Math.max(...p)) === s.y; }).length / set.length : NaN;
+console.log('\nheld-out accuracy per group (shipped model -> new)');
+for (const k of [4, 6, 7]) for (const [lo, hi] of [[0, 4], [4, 6], [6, 8], [8, 99]]) {
+  const g = test.filter((s) => s.keys === k && s.stars >= lo && s.stars < hi);
+  if (g.length < 50) continue;
+  console.log(`  ${k}K ${lo}-${hi === 99 ? '' : hi}★ ${String(g.length).padStart(6)} measures   ${accOf(g, STYLE_MODEL).toFixed(3)} -> ${accOf(g, model).toFixed(3)}`);
+}
+console.log(`  all        ${String(test.length).padStart(6)} measures   ${accOf(test, STYLE_MODEL).toFixed(3)} -> ${accOf(test, model).toFixed(3)}`);
 const base = Math.max(...counts) / train.length;
 const tr = evalSet(train), te = evalSet(test);
 console.log(`\ntrain ${train.length} samples, test ${test.length} (held-out songs)`);
@@ -148,7 +168,7 @@ console.log('test confusion (rows = ranked map, cols = predicted):');
 console.log('            ' + CLASSES.map((c) => c.slice(0, 7).padStart(8)).join(''));
 te.conf.forEach((r, i) => console.log(CLASSES[i].padEnd(12) + r.map((v) => String(v).padStart(8)).join('')));
 
-writeFileSync(new URL('../../src/automap/stylemodel.ts', import.meta.url), `/**
+if (argv.includes('--write')) writeFileSync(new URL('../../src/automap/stylemodel.ts', import.meta.url), `/**
  * Learned auto-style model (multinomial logistic regression), trained by
  * scripts/bench/train-style-model.ts on ${train.length} measures of ranked osu!mania maps.
  * Held-out accuracy ${te.acc.toFixed(3)} (majority baseline ${base.toFixed(3)}).
@@ -157,4 +177,4 @@ import type { StyleModel } from './stylefeatures';
 
 export const STYLE_MODEL: StyleModel = ${JSON.stringify(model)};
 `);
-console.log('wrote src/automap/stylemodel.ts');
+if (argv.includes('--write')) console.log('wrote src/automap/stylemodel.ts');
