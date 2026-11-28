@@ -341,6 +341,52 @@ export function fixOverlaps(map: Beatmap): Beatmap {
   return out;
 }
 
+/**
+ * Break fast jacks (two plain notes in one column within a quarter beat, at least 90 ms) by moving the
+ * later note to the nearest column that is free at that time and has no note that close before or
+ * after it. Timing is unchanged; a jack with no free column stays. Long notes are left as they are, and
+ * so are jacks in rows of more than `maxRowSize` notes.
+ * Returns the new map and how many notes moved.
+ */
+export function breakFastJacks(map: Beatmap, opts: { maxRowSize?: number } = {}): { map: Beatmap; moved: number } {
+  const out = cloneBeatmap(map);
+  const K = getKeys(out);
+  out.notes = sortNotes(out.notes);
+  const gapAt = (t: number) => Math.max((redLineAt(out, t)?.beatLength ?? 500) / 4 + 2, 90);
+  // per column, the notes in time order (kept up to date as notes move)
+  const byCol: Note[][] = Array.from({ length: K }, () => []);
+  for (const n of out.notes) byCol[n.column]?.push(n);
+  const near = (c: number, t: number, gap: number, self: Note) => byCol[c].some((x) => x !== self && (Math.abs(x.time - t) < gap || (isLN(x) && x.time <= t && x.endTime! + gap > t)));
+  let moved = 0;
+  // rows of more notes than this keep their jacks (jacked chords are chordjack, a pattern of its own)
+  const rowSize = new Map<number, number>();
+  for (const n of out.notes) rowSize.set(n.time, (rowSize.get(n.time) ?? 0) + 1);
+  const maxRow = opts.maxRowSize ?? K;
+  for (const n of out.notes) {
+    if (isLN(n) || (rowSize.get(n.time) ?? 0) > maxRow) continue;
+    const col = byCol[n.column];
+    const i = col.indexOf(n);
+    const prev = col[i - 1];
+    const gap = gapAt(n.time);
+    if (!prev || isLN(prev) || n.time - prev.time > gap) continue;
+    // nearest free column, alternating sides, the same hand first (the middle column of odd keys is shared)
+    const hand = (c: number) => (c * 2 + 1 < K ? 0 : c * 2 + 1 > K ? 1 : -1);
+    const cost = (c: number) => Math.abs(c - n.column) * 2 + (hand(c) === hand(n.column) || hand(c) < 0 ? 0 : 1);
+    const order = Array.from({ length: K }, (_, c) => c).filter((c) => c !== n.column).sort((a, b) => cost(a) - cost(b) || a - b);
+    const to = order.find((c) => !near(c, n.time, gap, n));
+    if (to === undefined) continue;
+    col.splice(i, 1);
+    n.column = to;
+    const dest = byCol[to];
+    let j = 0;
+    while (j < dest.length && dest[j].time < n.time) j++;
+    dest.splice(j, 0, n);
+    moved++;
+  }
+  out.notes = sortNotes(out.notes);
+  return { map: out, moved };
+}
+
 // ---------------------------------------------------------------- statistics
 
 export interface Stats {

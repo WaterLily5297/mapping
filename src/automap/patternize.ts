@@ -14,6 +14,15 @@
 import type { LnPreset } from '../tools/lnconvert';
 import { handOf } from '../analysis/patterns';
 
+
+/**
+ * Scales each style's chance of replaying a shape for a repeated rhythm (benchmarks only). Tried 0.3:
+ * charts then repeat shapes as often as ranked maps (held-out 7K 0.119 vs 0.127, from 0.25), but the
+ * pattern mix moved away from the ranked maps on most 7K songs (6+ stars: 43 worse, 15 better), so 1 stays.
+ */
+let REPEAT_SCALE = 1;
+export function _setRepeatScale(v: number) { REPEAT_SCALE = v; }
+
 export type Style = 'balanced' | 'stream' | 'jumpstream' | 'chordjack' | 'tech' | 'ln';
 
 export type Family =
@@ -299,7 +308,7 @@ export function placeColumns(rows: PlannedRow[], o: PlaceOptions): number[][] {
     const seen = history.get(sig);
     const gs = group[0].style ?? style;
     jackGap = jackGapOf(gs);
-    const replay = seen && beat - seen.beat <= 8 && rand() < gs.repeat ? seen.shapes : null;
+    const replay = seen && beat - seen.beat <= 8 && rand() < gs.repeat * REPEAT_SCALE ? seen.shapes : null;
     const mirror = replay && rand() < 0.4;
 
     if (cls === 'slow') state = null;

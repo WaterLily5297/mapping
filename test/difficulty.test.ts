@@ -164,3 +164,22 @@ describe('generate for a target star rating', () => {
     expect(one.scores).toEqual([]);
   });
 });
+
+import { breakFastJacks } from '../src/tools/transforms';
+describe('breaking fast jacks', () => {
+  it('moves a stream jack to a free column and keeps every row time', () => {
+    const m = createBeatmap({ keys: 7, bpm: 180, offset: 0 });
+    const q = 60000 / 180 / 4;
+    [0, 1, 1, 2, 3, 4, 5, 6].forEach((c, i) => m.notes.push(makeNote(Math.round(1000 + i * q), c)));
+    const r = breakFastJacks(m, { maxRowSize: 2 });
+    expect(r.moved).toBe(1);
+    expect(dirt(r.map).fastJacks).toBe(0);
+    expect(r.map.notes.map((n) => n.time)).toEqual(m.notes.map((n) => n.time));
+  });
+  it('leaves jacked chords alone', () => {
+    const m = createBeatmap({ keys: 7, bpm: 180, offset: 0 });
+    const q = 60000 / 180 / 4;
+    for (const i of [0, 1]) for (const c of [0, 1, 2]) m.notes.push(makeNote(Math.round(1000 + i * q), c));
+    expect(breakFastJacks(m, { maxRowSize: 2 }).moved).toBe(0);
+  });
+});

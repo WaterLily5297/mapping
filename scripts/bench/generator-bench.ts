@@ -26,6 +26,8 @@ import { parseOsu, getKeys, isLN, type Beatmap } from '../../src/core/beatmap';
 import { redLines } from '../../src/core/timing';
 import { analyze } from '../../src/automap/analysis';
 import { generateForStars } from '../../src/automap/target';
+import { _setRepeatScale } from '../../src/automap/patternize';
+import { _setLnLengthBias } from '../../src/automap/longnotes';
 import { _setContrastSource, _setMinijackStarsLowKeys, _setChordTargets } from '../../src/automap/generate';
 import { starRating } from '../../src/analysis/difficulty';
 import { classifyPatterns } from '../../src/analysis/patterns';
@@ -38,6 +40,8 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 if (opt('contrast-source')) _setContrastSource(opt('contrast-source') as 'auto' | 'energy' | 'loudness');
 if (opt('minijack-stars')) _setMinijackStarsLowKeys(Number(opt('minijack-stars')));
 if (argv.includes('--no-chord-targets')) _setChordTargets(false);
+if (opt('repeat-scale')) _setRepeatScale(Number(opt('repeat-scale')));
+if (opt('ln-length-bias')) _setLnLengthBias(Number(opt('ln-length-bias')));
 const max = Number(opt('max') ?? 40);
 const keysFilter = (opt('keys') ?? '4,7').split(',').map(Number);
 const style = opt('style');

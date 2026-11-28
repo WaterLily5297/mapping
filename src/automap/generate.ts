@@ -297,7 +297,10 @@ export function generateFromAnalysis(a: Analysis, opts: AutoMapOptions): Beatmap
   const lnRatio = opts.lnRatio ?? P.lnRatio;
   // long notes: the learned model (trained on ranked LN maps) when present, the loudness rule otherwise
   if (lnRatio > 0 && !style.ln) {
-    if (LN_MODEL) { map.notes = sortNotes(notes); placeLongNotes(map, a, lnRatio); }
+    // 6K: fewer but longer holds at the same setting (ranked 6K rice maps hold few notes, for longer).
+    // Held-out 6K: rhythm F1 0.765 -> 0.779 (20 songs better, 6 worse) at the same pattern mix
+    // (14 better, 11 worse); in 4K and 7K the learned placement as it is matched the ranked maps best.
+    if (LN_MODEL) { map.notes = sortNotes(notes); if (keys === 6) placeLongNotes(map, a, lnRatio * 0.4, undefined, 1); else placeLongNotes(map, a, lnRatio); }
     else addLongNotes(map, notes, a, beatLen, divisor, lnRatio, rand);
   }
 

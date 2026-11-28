@@ -119,7 +119,12 @@ export function tailFeatures(c: Ctx, map: Beatmap, L: Layout, n: Note, e: number
 const dot = (w: number[], mean: number[], std: number[], x: number[]) => x.reduce((s, v, i) => s + (w[i] ?? 0) * (std[i] > 0 ? (v - mean[i]) / std[i] : v), 0);
 
 /** Make the most likely `share` of the notes long (in place), ending each at its most likely candidate. */
-export function placeLongNotes(map: Beatmap, a: Analysis, share: number, model: LnModel | null = LN_MODEL): number {
+/** added to each tail candidate's score per doubling of its length in beats (0: the model as trained) */
+let LN_LENGTH_BIAS = 0;
+/** benchmarks only */
+export function _setLnLengthBias(v: number) { LN_LENGTH_BIAS = v; }
+
+export function placeLongNotes(map: Beatmap, a: Analysis, share: number, model: LnModel | null = LN_MODEL, lengthBias = LN_LENGTH_BIAS): number {
   if (!model || share <= 0 || !map.notes.length) return 0;
   const c = context(a), L = layout(map.notes);
   const scored = map.notes.filter((n) => !isLN(n)).map((n) => ({ n, s: dot(model.head.w, model.head.mean, model.head.std, headFeatures(c, map, L, n)) }))
@@ -131,7 +136,11 @@ export function placeLongNotes(map: Beatmap, a: Analysis, share: number, model: 
     const cands = tailCandidates(map, L, n);
     if (!cands.length) continue;
     let best = cands[0], bs = -Infinity;
-    tailGroupFeatures(c, map, L, n, cands).forEach((x, i) => { const s = dot(model.tail.w, model.tail.mean, model.tail.std, x); if (s > bs) { bs = s; best = cands[i]; } });
+    const beat = beatPos(map, n.time).beat;
+    tailGroupFeatures(c, map, L, n, cands).forEach((x, i) => {
+      const s = dot(model.tail.w, model.tail.mean, model.tail.std, x) + lengthBias * Math.log2(Math.max(1e-3, (cands[i] - n.time) / beat));
+      if (s > bs) { bs = s; best = cands[i]; }
+    });
     n.endTime = best;
     made++;
   }
