@@ -1,5 +1,5 @@
 /** maniamap's version (kept equal to package.json by test/product.test.ts) */
-export const VERSION = '1.3.0';
+export const VERSION = '1.3.1';
 
 /** `newer` is a later version than `older` (x.y.z, an optional leading v) */
 export function newerVersion(newer: string, older: string): boolean {

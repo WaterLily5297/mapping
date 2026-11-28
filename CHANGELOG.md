@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.1 — 2026-11-28
 
 ### Generate
 - **6K long notes: fewer, longer holds.** At the same Long notes setting, 6K places about 40% as many long notes and lets them hold a little longer, the way ranked 6K rice maps use them; the many short holds before made the star search drop rows. On held-out 6K songs the rhythm match rose from 0.765 to 0.779 (20 songs better, 6 worse) at about the same pattern mix (14 better, 11 worse). 4K and 7K are unchanged.
