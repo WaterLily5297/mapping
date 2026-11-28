@@ -6,10 +6,11 @@
  *
  *   npx tsx scripts/bench/seed-rerank.ts DATA_DIR KEYS RUN_DIR [RUN_DIR...] [--fit]
  *
+ * --json FILE: write each section's candidates.
  * --fit: measure each candidate after the star adjustment, as the app delivers it (the score is
  * still taken on the raw AI output, as in the app).
  */
-import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseOsu, cloneBeatmap, type Beatmap } from '../../src/core/beatmap';
@@ -21,7 +22,8 @@ import { fitDifficulty } from '../../src/tools/difficultyfit';
 
 const args = process.argv.slice(2);
 const withFit = args.includes('--fit');
-const [dataDir, keysArg, ...runs] = args.filter((x) => x !== '--fit');
+const jsonAt = args.indexOf('--json'), jsonOut = jsonAt >= 0 ? args[jsonAt + 1] : undefined;
+const [dataDir, keysArg, ...runs] = args.filter((x, i) => x !== '--fit' && i !== jsonAt && i !== jsonAt + 1);
 void keysArg;
 const sets = readdirSync(dataDir).sort();
 function decode(path: string): Float32Array {
@@ -38,6 +40,7 @@ const tv = (a: number[], b: number[]) => a.reduce((s, x, i) => s + Math.abs(x - 
 
 interface Cand { run: string; f1: number; skill: number; fastJ: number; q: QualityParts; total: number }
 const sections: Cand[][] = [];
+const names: { song: string; target: number }[] = [];
 const refFastJ: number[] = [];
 const results = runs.map((r) => (existsSync(join(r, 'results.json')) ? JSON.parse(readFileSync(join(r, 'results.json'), 'utf8')) as { song: string; ref?: string; target: number }[] : []));
 for (const [idx, set] of sets.entries()) {
@@ -64,6 +67,7 @@ for (const [idx, set] of sets.entries()) {
     return { run: basename(runs[i]), f1: f1(m, refCut), skill: tv(sk(m), sk(refCut)), fastJ: dirt(m).fastJacks, q: q.parts, total: q.total };
   });
   sections.push(cands);
+  names.push({ song: set, target: res.target });
   console.log(`${set.slice(0, 32).padEnd(32)} F1 ${cands.map((c) => c.f1.toFixed(2)).join(' ')} | skill ${cands.map((c) => c.skill.toFixed(2)).join(' ')} | score ${cands.map((c) => c.total.toFixed(2)).join(' ')}`);
 }
 const avg = (f: (c: Cand[]) => number) => sections.reduce((s, c) => s + f(c), 0) / Math.max(1, sections.length);
@@ -78,3 +82,4 @@ for (const k of ['stars', 'onBeat', 'energy', 'filled', 'clean'] as (keyof Quali
 report('oracle (best F1)', pickBy((c) => c.f1));
 console.log(`${'ranked map'.padEnd(22)} fast jacks ${(refFastJ.reduce((x, y) => x + y, 0) / Math.max(1, refFastJ.length)).toFixed(1)}`);
 report('oracle (best skill)', pickBy((c) => -c.skill));
+if (jsonOut) writeFileSync(jsonOut, JSON.stringify(sections.map((c, i) => ({ ...names[i], refFastJacks: refFastJ[i], candidates: c.map((x) => ({ f1: x.f1, skill: x.skill, fastJacks: x.fastJ, quality: x.total })) }))));

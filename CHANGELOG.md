@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0 — 2026-11-28
+
+### Generate
+- **Rhythm model trained on 3× the data**, with the sounds around each grid tick and a small hidden layer: it picks the ranked map's note positions more often (held-out 0.845 → 0.862 on 781 4K/6K/7K maps). Quick rules charts follow ranked rhythm a little better in every key count (rhythm F1 4K +0.003, 6K +0.010, 7K +0.005; more songs improved than got worse).
+
 ## 1.1.0 — 2026-11-27
 
 ### Audio
