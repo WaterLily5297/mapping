@@ -1,6 +1,6 @@
 {
   "name": "maniamap",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "osu!mania mapping tool for any key count: editor, toolkit and auto-mapper",
   "scripts": {
     "dev": "vite",
